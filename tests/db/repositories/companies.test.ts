@@ -85,6 +85,80 @@ describe("salvarEmpresas", () => {
     expect(resultado).toEqual({ inseridas: 0, ignoradas: 0 });
   });
 
+  it("mantém cada valor na sua coluna e na sua linha num lote de várias", async () => {
+    // Este é o único lugar do branch que monta SQL por concatenação. Um erro
+    // de contagem de colunas produziria SQL perfeitamente válido, com as
+    // colunas trocadas de lugar em silêncio — daí valores distintos em vários
+    // campos, e a releitura de cada linha.
+    await salvarEmpresas(banco.db, [
+      empresa({
+        cnpj: "10101010000101",
+        legalName: "Primeira LTDA",
+        tradeName: "Primeira",
+        website: "https://primeira.com.br",
+        city: "Blumenau",
+        uf: "SC",
+        employeeCount: 12,
+        summary: "resumo da primeira",
+        source: "cnpj",
+      }),
+      empresa({
+        cnpj: "20202020000202",
+        legalName: "Segunda S/A",
+        tradeName: "Segunda",
+        website: "https://segunda.com.br",
+        city: "Curitiba",
+        uf: "PR",
+        employeeCount: 340,
+        summary: "resumo da segunda",
+        source: "maps",
+      }),
+    ]);
+
+    const { rows } = await banco.db.query<{
+      cnpj: string;
+      legal_name: string;
+      trade_name: string;
+      website: string;
+      city: string;
+      uf: string;
+      employee_count: number;
+      summary: string;
+      source: string;
+    }>(
+      `select cnpj, legal_name, trade_name, website, city, uf,
+              employee_count, summary, source
+       from companies
+       where cnpj in ('10101010000101', '20202020000202')
+       order by cnpj`,
+    );
+
+    expect(rows).toEqual([
+      {
+        cnpj: "10101010000101",
+        legal_name: "Primeira LTDA",
+        trade_name: "Primeira",
+        website: "https://primeira.com.br",
+        city: "Blumenau",
+        uf: "SC",
+        employee_count: 12,
+        summary: "resumo da primeira",
+        source: "cnpj",
+      },
+      {
+        cnpj: "20202020000202",
+        legal_name: "Segunda S/A",
+        trade_name: "Segunda",
+        website: "https://segunda.com.br",
+        city: "Curitiba",
+        uf: "PR",
+        employee_count: 340,
+        summary: "resumo da segunda",
+        source: "maps",
+      },
+    ]);
+  });
+
   it("recusa campanha de outro tenant, em vez de gravar linha misturada", async () => {
     const vizinho = await criarTenantVizinho(banco.db, "0001");
 

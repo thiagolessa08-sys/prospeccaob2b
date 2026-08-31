@@ -213,6 +213,38 @@ describe("enriquecerDecisor — recusas", () => {
     expect(r.achou).toBe(true);
   });
 
+  it("chama a verificação paga quando a Hunter devolve status desconhecido", async () => {
+    // O ramo que gasta crédito. Até aqui só o caminho `cnpj_email` chegava
+    // nele, porque é o único que nasce com `verificacao: "unknown"` — mas a
+    // Hunter também pode devolver um status que não sabemos traduzir, e nesse
+    // caso o /email-verifier precisa mesmo ser chamado.
+    const verificar = vi
+      .fn()
+      .mockResolvedValue({ status: "valid", score: 85 });
+    const d = deps({
+      verificar,
+      acharPorNome: vi.fn().mockResolvedValue({
+        nome: "Maria Souza",
+        cargo: null,
+        email: "maria@alfa.com.br",
+        confianca: 80,
+        verificacao: "unknown",
+        fonte: "hunter_finder",
+      }),
+    });
+    const r = await enriquecerDecisor(ENTRADA, d);
+
+    expect(verificar).toHaveBeenCalledWith({
+      email: "maria@alfa.com.br",
+      apiKey: "chave",
+    });
+    expect(r.achou).toBe(true);
+    if (!r.achou) throw new Error("esperava sucesso");
+    // O status que vale é o que a verificação devolveu, não o "unknown" que
+    // veio da fonte.
+    expect(r.candidato.verificacao).toBe("valid");
+  });
+
   it("registra a falha da fonte e continua, em vez de derrubar a cadeia", async () => {
     const d = deps({
       acharPorNome: vi.fn().mockRejectedValue(new Error("Hunter fora do ar")),
