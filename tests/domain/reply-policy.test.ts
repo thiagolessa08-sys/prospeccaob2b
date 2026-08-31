@@ -19,9 +19,22 @@ function classificacao(
   };
 }
 
+/**
+ * `needsHuman` é obrigatório em produção de propósito — quem chama a política
+ * não pode esquecer de informar que o lead já foi entregue a um humano. Aqui
+ * ele tem padrão para que cada teste declare só o que está exercitando.
+ */
+function decidir(input: {
+  classification: ReplyClassification;
+  exchangeCount: number;
+  needsHuman?: boolean;
+}) {
+  return decideNextAction({ needsHuman: false, ...input });
+}
+
 describe("decideNextAction — caminhos por intenção", () => {
   it("envia o link de agendamento para lead interessado", () => {
-    const acao = decideNextAction({
+    const acao = decidir({
       classification: classificacao({ intent: "interested" }),
       exchangeCount: 1,
     });
@@ -29,7 +42,7 @@ describe("decideNextAction — caminhos por intenção", () => {
   });
 
   it("responde e conduz ao agendamento quando há dúvida ou objeção", () => {
-    const acao = decideNextAction({
+    const acao = decidir({
       classification: classificacao({
         intent: "question_or_objection",
         key_points: ["preço", "prazo"],
@@ -43,7 +56,7 @@ describe("decideNextAction — caminhos por intenção", () => {
   });
 
   it("agenda retomada futura em 'não agora'", () => {
-    const acao = decideNextAction({
+    const acao = decidir({
       classification: classificacao({ intent: "not_now" }),
       exchangeCount: 1,
     });
@@ -54,7 +67,7 @@ describe("decideNextAction — caminhos por intenção", () => {
   });
 
   it("encerra sem suprimir em recusa simples", () => {
-    const acao = decideNextAction({
+    const acao = decidir({
       classification: classificacao({ intent: "no" }),
       exchangeCount: 1,
     });
@@ -66,7 +79,7 @@ describe("decideNextAction — caminhos por intenção", () => {
   });
 
   it("encerra e suprime em pedido de descadastro", () => {
-    const acao = decideNextAction({
+    const acao = decidir({
       classification: classificacao({ intent: "opt_out" }),
       exchangeCount: 1,
     });
@@ -78,7 +91,7 @@ describe("decideNextAction — caminhos por intenção", () => {
   });
 
   it("ignora respostas fora do escopo", () => {
-    const acao = decideNextAction({
+    const acao = decidir({
       classification: classificacao({ intent: "out_of_scope" }),
       exchangeCount: 1,
     });
@@ -91,7 +104,7 @@ describe("decideNextAction — caminhos por intenção", () => {
 
 describe("decideNextAction — travas de segurança", () => {
   it("honra o descadastro mesmo com confiança baixa", () => {
-    const acao = decideNextAction({
+    const acao = decidir({
       classification: classificacao({ intent: "opt_out", confidence: 0.1 }),
       exchangeCount: 1,
     });
@@ -103,7 +116,7 @@ describe("decideNextAction — travas de segurança", () => {
   });
 
   it("honra o descadastro mesmo com a conversa já longa", () => {
-    const acao = decideNextAction({
+    const acao = decidir({
       classification: classificacao({ intent: "opt_out" }),
       exchangeCount: 99,
     });
@@ -111,7 +124,7 @@ describe("decideNextAction — travas de segurança", () => {
   });
 
   it("passa para humano quando a confiança fica abaixo do limite", () => {
-    const acao = decideNextAction({
+    const acao = decidir({
       classification: classificacao({
         intent: "interested",
         confidence: CONFIDENCE_THRESHOLD - 0.01,
@@ -125,7 +138,7 @@ describe("decideNextAction — travas de segurança", () => {
   });
 
   it("aceita a classificação exatamente no limite de confiança", () => {
-    const acao = decideNextAction({
+    const acao = decidir({
       classification: classificacao({ confidence: CONFIDENCE_THRESHOLD }),
       exchangeCount: 1,
     });
@@ -133,7 +146,7 @@ describe("decideNextAction — travas de segurança", () => {
   });
 
   it("passa para humano ao atingir o teto de trocas", () => {
-    const acao = decideNextAction({
+    const acao = decidir({
       classification: classificacao({ intent: "question_or_objection" }),
       exchangeCount: MAX_EXCHANGES,
     });
@@ -144,7 +157,7 @@ describe("decideNextAction — travas de segurança", () => {
   });
 
   it("ainda automatiza na troca imediatamente anterior ao teto", () => {
-    const acao = decideNextAction({
+    const acao = decidir({
       classification: classificacao({ intent: "question_or_objection" }),
       exchangeCount: MAX_EXCHANGES - 1,
     });
@@ -152,7 +165,7 @@ describe("decideNextAction — travas de segurança", () => {
   });
 
   it("encerra recusa clara sem passar por humano, mesmo em conversa longa", () => {
-    const acao = decideNextAction({
+    const acao = decidir({
       classification: classificacao({ intent: "no" }),
       exchangeCount: MAX_EXCHANGES + 3,
     });
@@ -164,7 +177,7 @@ describe("decideNextAction — travas de segurança", () => {
   });
 
   it("prioriza confiança baixa sobre o teto de trocas", () => {
-    const acao = decideNextAction({
+    const acao = decidir({
       classification: classificacao({ confidence: 0.2 }),
       exchangeCount: MAX_EXCHANGES + 1,
     });
@@ -175,7 +188,7 @@ describe("decideNextAction — travas de segurança", () => {
   });
 
   it("passa para humano quando a recusa vem com confiança baixa", () => {
-    const acao = decideNextAction({
+    const acao = decidir({
       classification: classificacao({
         intent: "no",
         confidence: CONFIDENCE_THRESHOLD - 0.01,
@@ -189,7 +202,7 @@ describe("decideNextAction — travas de segurança", () => {
   });
 
   it("passa para humano quando a resposta fora do escopo vem com confiança baixa", () => {
-    const acao = decideNextAction({
+    const acao = decidir({
       classification: classificacao({
         intent: "out_of_scope",
         confidence: CONFIDENCE_THRESHOLD - 0.01,
@@ -203,13 +216,67 @@ describe("decideNextAction — travas de segurança", () => {
   });
 
   it("ignora resposta fora do escopo mesmo em conversa longa", () => {
-    const acao = decideNextAction({
+    const acao = decidir({
       classification: classificacao({ intent: "out_of_scope" }),
       exchangeCount: MAX_EXCHANGES + 2,
     });
     expect(acao).toEqual({
       type: "ignore",
       reason: "resposta fora do escopo",
+    });
+  });
+});
+
+describe("decideNextAction — números inválidos falham para o lado seguro", () => {
+  // `NaN < 0.7` é falso: uma comparação ingênua deixaria a trava passar direto.
+  it("trata confiança não finita como abaixo do limite", () => {
+    for (const valor of [Number.NaN, Number.POSITIVE_INFINITY]) {
+      const acao = decidir({
+        classification: classificacao({ confidence: valor }),
+        exchangeCount: 1,
+      });
+      expect(acao).toEqual({
+        type: "handoff_to_human",
+        reason: "classificação com confiança baixa",
+      });
+    }
+  });
+
+  it("trata contagem de trocas não finita como teto atingido", () => {
+    const acao = decidir({
+      classification: classificacao({ intent: "question_or_objection" }),
+      exchangeCount: Number.NaN,
+    });
+    expect(acao).toEqual({
+      type: "handoff_to_human",
+      reason: "conversa longa sem desfecho",
+    });
+  });
+});
+
+describe("decideNextAction — lead já entregue a um humano", () => {
+  it("não volta a automatizar um lead em mãos humanas", () => {
+    const acao = decidir({
+      classification: classificacao({ intent: "interested" }),
+      exchangeCount: 1,
+      needsHuman: true,
+    });
+    expect(acao).toEqual({
+      type: "handoff_to_human",
+      reason: "lead já entregue a um humano",
+    });
+  });
+
+  it("honra o descadastro mesmo com o lead já em mãos humanas", () => {
+    const acao = decidir({
+      classification: classificacao({ intent: "opt_out" }),
+      exchangeCount: 1,
+      needsHuman: true,
+    });
+    expect(acao).toEqual({
+      type: "close_lost",
+      reason: "pedido de descadastro",
+      suppress: true,
     });
   });
 });

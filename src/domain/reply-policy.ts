@@ -9,6 +9,12 @@ export const MAX_EXCHANGES = 5;
 /** Espera antes de retomar um lead que pediu para ser procurado depois. */
 export const NOT_NOW_RESUME_DAYS = 90;
 
+/**
+ * Os campos `reason` são texto para humano lerem no painel e nos logs: podem
+ * mudar de redação a qualquer momento. Nada deve ramificar sobre eles — se
+ * algum fluxo precisar distinguir motivos, converta antes para uma união de
+ * literais própria em vez de comparar estas frases.
+ */
 export type NextAction =
   | { type: "send_scheduling_link" }
   | { type: "answer_and_nudge"; keyPoints: string[] }
@@ -20,8 +26,10 @@ export type NextAction =
 export function decideNextAction(input: {
   classification: ReplyClassification;
   exchangeCount: number;
+  /** O lead já foi entregue a um humano em alguma rodada anterior. */
+  needsHuman: boolean;
 }): NextAction {
-  const { classification, exchangeCount } = input;
+  const { classification, exchangeCount, needsHuman } = input;
 
   // Descadastro vem antes de qualquer trava: continuar escrevendo para quem
   // pediu para parar é pior — e mais arriscado sob a LGPD — do que perder o lead.
@@ -33,7 +41,21 @@ export function decideNextAction(input: {
     };
   }
 
-  if (classification.confidence < CONFIDENCE_THRESHOLD) {
+  // Uma vez entregue a um humano, a automação não retoma a conversa sozinha:
+  // sem esta trava a próxima resposta do lead seria classificada e respondida
+  // como se o repasse nunca tivesse acontecido.
+  if (needsHuman) {
+    return { type: "handoff_to_human", reason: "lead já entregue a um humano" };
+  }
+
+  // Comparar direto (`confidence < LIMITE`) falharia para o lado aberto: com
+  // NaN a comparação é falsa e a automação seguiria escrevendo ao lead. O
+  // Plano 2 vai remontar esta classificação a partir de `messages.confidence`,
+  // que é `numeric` anulável — um `Number(null)` basta para produzir NaN.
+  if (
+    !Number.isFinite(classification.confidence) ||
+    classification.confidence < CONFIDENCE_THRESHOLD
+  ) {
     return {
       type: "handoff_to_human",
       reason: "classificação com confiança baixa",
@@ -49,7 +71,9 @@ export function decideNextAction(input: {
     return { type: "ignore", reason: "resposta fora do escopo" };
   }
 
-  if (exchangeCount >= MAX_EXCHANGES) {
+  // Contagem não finita conta como teto atingido, pelo mesmo motivo da
+  // confiança: na dúvida sobre o número, quem decide é um humano.
+  if (!Number.isFinite(exchangeCount) || exchangeCount >= MAX_EXCHANGES) {
     return { type: "handoff_to_human", reason: "conversa longa sem desfecho" };
   }
 
