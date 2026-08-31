@@ -32,8 +32,9 @@
 
 **Interfaces:**
 - Consumes: nada (primeira task).
-- Produces: `loadEnv(source: Record<string, string | undefined>): Env` e a constante `env: Env`, onde
+- Produces: `loadEnv(source: Record<string, string | undefined>): Env` e o acessor memoizado `env(): Env`, onde
   `Env = { ANTHROPIC_API_KEY: string; SUPABASE_URL: string; SUPABASE_SERVICE_ROLE_KEY: string }`.
+  As tasks seguintes consomem chamando `env()`, nunca `env` direto.
 
 - [ ] **Step 1: Criar `package.json`**
 
@@ -49,9 +50,9 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.70.0",
+    "@anthropic-ai/sdk": "^0.122.0",
     "@supabase/supabase-js": "^2.45.0",
-    "zod": "^3.25.0"
+    "zod": "^4.0.0"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
@@ -659,7 +660,7 @@ export function assertTransition(from: LeadStage, to: LeadStage): void {
 - [ ] **Step 4: Rodar o teste e confirmar que passa**
 
 Run: `npm test -- tests/domain/stages.test.ts`
-Esperado: PASS (12 testes).
+Esperado: PASS (13 testes).
 
 - [ ] **Step 5: Commit**
 
@@ -828,7 +829,7 @@ export function ruleForOptOut(email: string): SuppressionRule {
 - [ ] **Step 4: Rodar o teste e confirmar que passa**
 
 Run: `npm test -- tests/domain/suppression.test.ts`
-Esperado: PASS (11 testes).
+Esperado: PASS (13 testes).
 
 - [ ] **Step 5: Commit**
 
@@ -844,6 +845,7 @@ git commit -m "feat: normalização de e-mail e regras de supressão"
 **Files:**
 - Create: `src/ai/client.ts`
 - Create: `src/ai/niche-parser.ts`
+- Create: `tests/helpers/ai-mock.ts`
 - Test: `tests/ai/niche-parser.test.ts`
 
 **Interfaces:**
@@ -854,6 +856,7 @@ git commit -m "feat: normalização de e-mail e regras de supressão"
   - `type AiDeps = { client: Pick<Anthropic, "messages"> }`
   - `NicheFiltersSchema` (Zod) e `type NicheFilters = { cnaes: string[]; ufs: string[]; cities: string[]; min_employees: number | null; max_employees: number | null; target_roles: string[]; keywords: string[] }`
   - `parseNiche(description: string, deps?: AiDeps): Promise<NicheFilters>`
+  - Helper compartilhado de teste `tests/helpers/ai-mock.ts`: `depsComParse(parse: Mock): AiDeps`, `parseRetornando(parsedOutput: unknown): Mock`, `parseSemSaida(): Mock`. **As Tasks 6, 7 e 9 importam este helper em vez de redefinir o mock localmente.**
 
 - [ ] **Step 1: Implementar `src/ai/client.ts`**
 
@@ -879,14 +882,52 @@ export interface AiDeps {
 }
 ```
 
-- [ ] **Step 2: Escrever o teste que falha**
+- [ ] **Step 2: Criar o helper de mock compartilhado**
+
+Criar `tests/helpers/ai-mock.ts`. Este arquivo é a única fonte de mocks do
+cliente Anthropic no projeto — as Tasks 6, 7 e 9 importam daqui em vez de
+redefinir o mock localmente.
+
+```typescript
+import { vi, type Mock } from "vitest";
+import type { AiDeps } from "../../src/ai/client.js";
+
+/**
+ * Monta um `AiDeps` cujo `messages.parse` é um mock do vitest.
+ *
+ * O cast inseguro mora aqui de propósito. `AiDeps.client` é
+ * `Pick<Anthropic, "messages">` para que o código de produção infira o tipo
+ * de `parsed_output`, e nenhum mock consegue satisfazer aquela superfície
+ * inteira. Concentrando a construção num único lugar, o cast existe uma vez
+ * só em vez de se repetir em cada módulo de IA.
+ */
+export function depsComParse(parse: Mock): AiDeps {
+  return { client: { messages: { parse } } } as unknown as AiDeps;
+}
+
+/** `parse` que devolve uma saída estruturada bem-sucedida. */
+export function parseRetornando(parsedOutput: unknown): Mock {
+  return vi
+    .fn()
+    .mockResolvedValue({ parsed_output: parsedOutput, stop_reason: "end_turn" });
+}
+
+/** `parse` que devolve recusa, sem saída estruturada. */
+export function parseSemSaida(): Mock {
+  return vi
+    .fn()
+    .mockResolvedValue({ parsed_output: null, stop_reason: "refusal" });
+}
+```
+
+- [ ] **Step 2b: Escrever o teste que falha**
 
 Criar `tests/ai/niche-parser.test.ts`:
 
 ```typescript
 import { describe, it, expect, vi } from "vitest";
 import { parseNiche } from "../../src/ai/niche-parser.js";
-import type { AiDeps } from "../../src/ai/client.js";
+import { depsComParse } from "../helpers/ai-mock.js";
 
 const FILTROS = {
   cnaes: ["1091101"],
@@ -897,10 +938,6 @@ const FILTROS = {
   target_roles: ["Gerente de TI"],
   keywords: ["indústria de alimentos"],
 };
-
-function depsComParse(parse: ReturnType<typeof vi.fn>): AiDeps {
-  return { client: { messages: { parse } } } as unknown as AiDeps;
-}
 
 describe("parseNiche", () => {
   it("devolve os filtros estruturados retornados pelo modelo", async () => {
@@ -1045,7 +1082,7 @@ console.log(JSON.stringify(filtros, null, 2));
 Run: `npx tsx scripts/smoke-niche.ts` (com `ANTHROPIC_API_KEY` no ambiente)
 Esperado: imprime um objeto JSON com as sete chaves; `ufs` contém `"SC"` e `target_roles` menciona TI.
 
-Se falhar por incompatibilidade de versão do Zod com o helper, ajuste a versão do `zod` no `package.json` (o helper do SDK aceita Zod 3 e 4 conforme a versão do SDK) e rode novamente. Se não houver chave de API disponível, pule este passo e registre a pendência — mas não replique o padrão nas Tasks 6, 7 e 9 antes de validá-lo.
+Se não houver chave de API disponível, pule este passo e registre a pendência. A compatibilidade de versões já foi validada estaticamente com `@anthropic-ai/sdk@0.122.0` + `zod@3.25.x`: `zodOutputFormat` é exportado por `@anthropic-ai/sdk/helpers/zod`, `client.messages.parse` existe, `output_config` aceita `effort: 'low' | 'medium' | 'high' | 'xhigh' | 'max'`, e o campo de retorno é `parsed_output`. O que o smoke test acrescenta é a validação de comportamento em runtime (qualidade da saída do modelo), não de assinatura — o `npm run typecheck` cobre a assinatura.
 
 - [ ] **Step 7: Commit**
 
@@ -1078,16 +1115,12 @@ Criar `tests/ai/email-writer.test.ts`:
 ```typescript
 import { describe, it, expect, vi } from "vitest";
 import { writeFirstEmail } from "../../src/ai/email-writer.js";
-import type { AiDeps } from "../../src/ai/client.js";
+import { depsComParse } from "../helpers/ai-mock.js";
 
 const RASCUNHO = {
   subject: "Integração de dados na Alfa Alimentos",
   body: "Olá Maria, ...",
 };
-
-function depsComParse(parse: ReturnType<typeof vi.fn>): AiDeps {
-  return { client: { messages: { parse } } } as unknown as AiDeps;
-}
 
 const ENTRADA = {
   voice: {
@@ -1326,11 +1359,7 @@ Criar `tests/ai/reply-classifier.test.ts`:
 ```typescript
 import { describe, it, expect, vi } from "vitest";
 import { classifyReply } from "../../src/ai/reply-classifier.js";
-import type { AiDeps } from "../../src/ai/client.js";
-
-function depsComParse(parse: ReturnType<typeof vi.fn>): AiDeps {
-  return { client: { messages: { parse } } } as unknown as AiDeps;
-}
+import { depsComParse } from "../helpers/ai-mock.js";
 
 function classificacao(overrides: Record<string, unknown> = {}) {
   return {
@@ -1711,6 +1740,48 @@ describe("decideNextAction — travas de segurança", () => {
       reason: "classificação com confiança baixa",
     });
   });
+
+  // Os três testes a seguir travam a ORDEM das guardas. Sem eles, mover a
+  // trava de confiança para depois de `no`/`out_of_scope`, ou o teto de
+  // trocas para antes de `out_of_scope`, passaria despercebido.
+  it("passa para humano quando a recusa vem com confiança baixa", () => {
+    const acao = decideNextAction({
+      classification: classificacao({
+        intent: "no",
+        confidence: CONFIDENCE_THRESHOLD - 0.01,
+      }),
+      exchangeCount: 1,
+    });
+    expect(acao).toEqual({
+      type: "handoff_to_human",
+      reason: "classificação com confiança baixa",
+    });
+  });
+
+  it("passa para humano quando a resposta fora do escopo vem com confiança baixa", () => {
+    const acao = decideNextAction({
+      classification: classificacao({
+        intent: "out_of_scope",
+        confidence: CONFIDENCE_THRESHOLD - 0.01,
+      }),
+      exchangeCount: 1,
+    });
+    expect(acao).toEqual({
+      type: "handoff_to_human",
+      reason: "classificação com confiança baixa",
+    });
+  });
+
+  it("ignora resposta fora do escopo mesmo em conversa longa", () => {
+    const acao = decideNextAction({
+      classification: classificacao({ intent: "out_of_scope" }),
+      exchangeCount: MAX_EXCHANGES + 2,
+    });
+    expect(acao).toEqual({
+      type: "ignore",
+      reason: "resposta fora do escopo",
+    });
+  });
 });
 ```
 
@@ -1794,7 +1865,7 @@ export function decideNextAction(input: {
 - [ ] **Step 4: Rodar o teste e confirmar que passa**
 
 Run: `npm test -- tests/domain/reply-policy.test.ts`
-Esperado: PASS (14 testes).
+Esperado: PASS (17 testes).
 
 - [ ] **Step 5: Rodar o typecheck**
 
@@ -1830,13 +1901,9 @@ Criar `tests/ai/reply-writer.test.ts`:
 ```typescript
 import { describe, it, expect, vi } from "vitest";
 import { writeReply, type ConversationTurn } from "../../src/ai/reply-writer.js";
-import type { AiDeps } from "../../src/ai/client.js";
+import { depsComParse } from "../helpers/ai-mock.js";
 
 const RASCUNHO = { subject: "Re: proposta", body: "Claro, segue o link..." };
-
-function depsComParse(parse: ReturnType<typeof vi.fn>): AiDeps {
-  return { client: { messages: { parse } } } as unknown as AiDeps;
-}
 
 const VOZ = {
   offerDescription: "Consultoria de dados e BI para indústrias.",

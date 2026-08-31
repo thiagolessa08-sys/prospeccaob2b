@@ -119,8 +119,12 @@ Instantly ~US$ 37 + n8n cloud ~US$ 20 + Hunter/Snov ~US$ 30–50 + Claude API
 3. Ação por classificação:
    - **Interessado** → envia link Cal.com direto.
    - **Dúvida/objeção** → responde e conduz ao link.
-   - **Não agora** → agradece e agenda retomada futura (data em `leads`).
-   - **Não / opt-out** → agradece, **Descartado**, entra na `suppression_list`.
+   - **Não agora** → agradece e agenda retomada futura (data em `leads`),
+     no prazo que o próprio lead pediu quando ele indicar um.
+   - **Não** → agradece, **Descartado**. *Não* entra na `suppression_list`
+     (ver Emenda 1).
+   - **Opt-out** → **Descartado** e entra na `suppression_list`, sem e-mail de
+     resposta (ver Emenda 2).
    - **Fora do escopo** → aguarda/reprograma conforme o caso.
 4. Webhook do Cal.com em agendamento → estágio **Reunião marcada** + notificação
    ao usuário por e-mail.
@@ -169,7 +173,42 @@ Instantly ~US$ 37 + n8n cloud ~US$ 20 + Hunter/Snov ~US$ 30–50 + Claude API
 - Cobrança, times e permissões.
 - Negociação de horários pela IA direto na agenda (v1 usa apenas o link Cal.com).
 
-## 9. Critérios de sucesso
+## 9. Emendas
+
+Registradas durante a implementação do Plano 1, a partir de achados do review
+de código. Cada uma altera o desenho original acima.
+
+**Emenda 1 — "Não" não suprime o contato.** O desenho original mandava tanto
+`não` quanto `opt-out` para a `suppression_list`. Na implementação, só o
+`opt-out` suprime. Um "não temos interesse agora" é uma resposta comercial,
+não um pedido para ser esquecido; suprimir permanentemente quem apenas
+recusou uma oferta destrói leads recicláveis sem nenhum ganho de conformidade.
+O `opt-out` continua suprimindo para sempre.
+
+**Emenda 2 — Pedido de descadastro não recebe resposta.** O desenho original
+mandava agradecer. A implementação encerra em silêncio: quem pediu para parar
+de receber e-mails não deve receber mais um e-mail, nem que seja de despedida.
+
+**Emenda 3 — Toda campanha declara o nome de quem assina.** `campaigns` ganhou
+a coluna obrigatória `sender_first_name`. Sem ela, o modelo inventava um nome
+humano ao assinar — o que, em e-mail não solicitado, é falsear identidade.
+
+**Emenda 4 — Todo e-mail enviado oferece saída explícita.** Ambos os prompts
+instruem uma frase final dizendo ao destinatário que ele pode responder
+pedindo para não ser mais contatado. Exigência prática da LGPD Art. 18 e
+proteção da reputação do domínio.
+
+**Emenda 5 — Banco fecha por padrão.** Todas as tabelas têm Row Level Security
+ativado sem nenhuma policy. O backend usa a service role key, que ignora RLS;
+o painel (Plano 3) precisará de policies por tenant. Sem isso, a chave anônima
+do Supabase — que é pública por natureza — daria acesso de leitura e escrita a
+todos os leads, mensagens e listas de supressão de todos os clientes.
+
+**Emenda 6 — A automação lembra que desistiu.** `decideNextAction` recebe
+`needsHuman`. Depois que uma conversa é entregue a um humano, a IA para de
+responder àquele lead. O `opt-out` continua tendo precedência sobre tudo.
+
+## 10. Critérios de sucesso
 
 - Criar uma campanha descrevendo o nicho e, sem nenhuma ação manual, ver leads
   percorrerem o funil até **Reunião marcada**.
