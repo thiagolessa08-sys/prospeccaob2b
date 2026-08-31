@@ -1,5 +1,9 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { subirBanco, type BancoDeTeste } from "../../helpers/pg.js";
+import {
+  subirBanco,
+  criarTenantVizinho,
+  type BancoDeTeste,
+} from "../../helpers/pg.js";
 import { salvarEmpresas } from "../../../src/db/repositories/companies.js";
 import {
   criarLead,
@@ -60,6 +64,25 @@ describe("criarLead", () => {
     expect(lead.stage).toBe("enriched");
     expect(lead.exchange_count).toBe(0);
     expect(lead.needs_human).toBe(false);
+  });
+
+  it("recusa empresa de outro tenant, em vez de gravar lead misturado", async () => {
+    const vizinho = await criarTenantVizinho(banco.db, "0002");
+
+    await expect(
+      criarLead(
+        banco.db,
+        novoLead({
+          companyId: vizinho.companyId,
+          email: "cruzado@empresa.com.br",
+        }),
+      ),
+    ).rejects.toThrow(/não pertence ao tenant/i);
+
+    const { rows } = await banco.db.query(
+      `select 1 from leads where email = 'cruzado@empresa.com.br'`,
+    );
+    expect(rows).toHaveLength(0);
   });
 });
 

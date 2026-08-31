@@ -1,5 +1,9 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { subirBanco, type BancoDeTeste } from "../../helpers/pg.js";
+import {
+  subirBanco,
+  criarTenantVizinho,
+  type BancoDeTeste,
+} from "../../helpers/pg.js";
 import { salvarEmpresas } from "../../../src/db/repositories/companies.js";
 import { criarLead } from "../../../src/db/repositories/leads.js";
 import {
@@ -114,6 +118,27 @@ describe("anexarMensagem", () => {
     });
     expect(a).not.toBeNull();
     expect(b).not.toBeNull();
+  });
+
+  it("lança em lead de outro tenant, sem confundir com reentrega", async () => {
+    const vizinho = await criarTenantVizinho(banco.db, "0003");
+
+    await expect(
+      anexarMensagem(banco.db, {
+        tenantId: banco.tenantId,
+        leadId: vizinho.leadId,
+        direction: "inbound",
+        body: "mensagem cruzada",
+        externalId: "evt_cruzado",
+      }),
+    ).rejects.toThrow(/não pertence ao tenant/i);
+
+    // Lançar, e não devolver `null`: `null` faria o chamador responder 2xx ao
+    // Instantly e a resposta do lead sumiria em silêncio.
+    const { rows } = await banco.db.query(
+      `select 1 from messages where external_id = 'evt_cruzado'`,
+    );
+    expect(rows).toHaveLength(0);
   });
 });
 

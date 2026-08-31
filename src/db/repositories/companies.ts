@@ -33,6 +33,31 @@ export async function salvarEmpresas(
 ): Promise<{ inseridas: number; ignoradas: number }> {
   if (empresas.length === 0) return { inseridas: 0, ignoradas: 0 };
 
+  // `tenant_id` e `campaign_id` são chaves estrangeiras independentes: o
+  // esquema aceitaria uma empresa do tenant A ligada a uma campanha do tenant
+  // B. Conferir antes do lote, e não linha a linha, porque na prática o lote
+  // inteiro vem de uma única campanha — o laço só existe para o caso de
+  // alguém misturar.
+  const pares = new Map<string, { tenantId: string; campaignId: string }>();
+  for (const e of empresas) {
+    pares.set(`${e.tenantId}|${e.campaignId}`, {
+      tenantId: e.tenantId,
+      campaignId: e.campaignId,
+    });
+  }
+  for (const par of pares.values()) {
+    const { rows } = await db.query(
+      `select 1 from campaigns where id = $2 and tenant_id = $1`,
+      [par.tenantId, par.campaignId],
+    );
+    if (!rows[0]) {
+      throw new Error(
+        `Campanha ${par.campaignId} não pertence ao tenant ${par.tenantId}: ` +
+          `uma empresa não pode cruzar tenants.`,
+      );
+    }
+  }
+
   const colunasPorLinha = 11;
   const valores: unknown[] = [];
   const marcadores = empresas.map((e, i) => {

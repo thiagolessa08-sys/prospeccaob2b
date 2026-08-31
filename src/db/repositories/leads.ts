@@ -23,12 +23,26 @@ const COLUNAS = `id, tenant_id, campaign_id, company_id, full_name, role_title,
   email, email_verified, stage, discard_reason, handoff_reason, exchange_count,
   resume_at, needs_human, created_at, updated_at`;
 
+/**
+ * Cria o lead exigindo que a empresa seja do mesmo tenant.
+ *
+ * `tenant_id` e `company_id` são chaves estrangeiras independentes: o esquema
+ * aceitaria de bom grado um lead do tenant A apontando para uma empresa do
+ * tenant B. As leituras filtram por tenant e não veriam a linha, então o
+ * estrago seria dado invisível — dado órfão hoje, vazamento no dia em que
+ * alguma consulta juntar por `company_id`. O `where exists` faz o próprio
+ * banco recusar a combinação, sem transação e sem uma segunda ida ao servidor.
+ */
 export async function criarLead(db: Db, input: NovoLead): Promise<Lead> {
   const { rows } = await db.query<Lead>(
     `insert into leads
        (tenant_id, campaign_id, company_id, full_name, role_title,
         email, email_verified)
-     values ($1, $2, $3, $4, $5, $6, $7)
+     select $1::uuid, $2::uuid, $3::uuid, $4::text, $5::text, $6::text,
+            $7::boolean
+     where exists (
+       select 1 from companies where id = $3 and tenant_id = $1
+     )
      returning ${COLUNAS}`,
     [
       input.tenantId,
@@ -40,7 +54,13 @@ export async function criarLead(db: Db, input: NovoLead): Promise<Lead> {
       input.emailVerified,
     ],
   );
-  return rows[0]!;
+  if (!rows[0]) {
+    throw new Error(
+      `Empresa ${input.companyId} não pertence ao tenant ${input.tenantId}: ` +
+        `um lead não pode cruzar tenants.`,
+    );
+  }
+  return rows[0];
 }
 
 export async function buscarLead(

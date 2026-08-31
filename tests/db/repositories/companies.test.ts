@@ -1,5 +1,9 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { subirBanco, type BancoDeTeste } from "../../helpers/pg.js";
+import {
+  subirBanco,
+  criarTenantVizinho,
+  type BancoDeTeste,
+} from "../../helpers/pg.js";
 import {
   salvarEmpresas,
   listarPendentesDeEnriquecimento,
@@ -79,6 +83,25 @@ describe("salvarEmpresas", () => {
   it("não faz nada com lote vazio", async () => {
     const resultado = await salvarEmpresas(banco.db, []);
     expect(resultado).toEqual({ inseridas: 0, ignoradas: 0 });
+  });
+
+  it("recusa campanha de outro tenant, em vez de gravar linha misturada", async () => {
+    const vizinho = await criarTenantVizinho(banco.db, "0001");
+
+    await expect(
+      salvarEmpresas(banco.db, [
+        empresa({
+          campaignId: vizinho.campaignId,
+          cnpj: "99999999000101",
+          legalName: "Empresa cruzada",
+        }),
+      ]),
+    ).rejects.toThrow(/não pertence ao tenant/i);
+
+    const { rows } = await banco.db.query(
+      `select 1 from companies where cnpj = '99999999000101'`,
+    );
+    expect(rows).toHaveLength(0);
   });
 });
 

@@ -61,3 +61,62 @@ export async function subirBanco(): Promise<BancoDeTeste> {
     encerrar: () => pglite.close(),
   };
 }
+
+export interface TenantVizinho {
+  tenantId: string;
+  campaignId: string;
+  companyId: string;
+  leadId: string;
+}
+
+/**
+ * Cria um segundo tenant completo — campanha, empresa e lead próprios.
+ *
+ * Serve para provar que uma escrita não consegue misturar tenants: os ids
+ * daqui são legítimos, existem no banco e satisfazem todas as chaves
+ * estrangeiras. O que os torna inválidos é só pertencerem a outro dono.
+ */
+export async function criarTenantVizinho(
+  db: Db,
+  sufixo: string,
+): Promise<TenantVizinho> {
+  const tenantId = `aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaa${sufixo}`;
+  const campaignId = `bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbb${sufixo}`;
+
+  await db.query(`insert into tenants (id, name) values ($1, $2)`, [
+    tenantId,
+    "Concorrente",
+  ]);
+  await db.query(
+    `insert into campaigns
+       (id, tenant_id, name, niche_description, offer_description,
+        scheduling_link, sender_first_name)
+     values ($1, $2, $3, $4, $5, $6, $7)`,
+    [
+      campaignId,
+      tenantId,
+      "Campanha do vizinho",
+      "outro nicho",
+      "outra oferta",
+      "https://cal.com/vizinho/30min",
+      "Vizinho",
+    ],
+  );
+
+  const { rows: empresa } = await db.query<{ id: string }>(
+    `insert into companies (tenant_id, campaign_id, legal_name, source)
+     values ($1, $2, 'Empresa do vizinho', 'cnpj')
+     returning id`,
+    [tenantId, campaignId],
+  );
+  const companyId = empresa[0]!.id;
+
+  const { rows: lead } = await db.query<{ id: string }>(
+    `insert into leads (tenant_id, campaign_id, company_id, email)
+     values ($1, $2, $3, $4)
+     returning id`,
+    [tenantId, campaignId, companyId, `decisor.${sufixo}@vizinho.com.br`],
+  );
+
+  return { tenantId, campaignId, companyId, leadId: lead[0]!.id };
+}
