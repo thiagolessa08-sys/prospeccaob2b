@@ -139,6 +139,42 @@ describe("criarProvedorInstantly — enviar", () => {
     expect(conversa.find((m) => m.subject === "Nunca gravada")).toBeUndefined();
   });
 
+  it("relata sucesso e registra a inconsistência quando a gravação falha", async () => {
+    const fake = fetchFalso([respostaJson({ id: "lead_gravacao" })]);
+    const dbQuebrado = {
+      query: async (texto: string, params?: readonly unknown[]) => {
+        if (/insert into messages/i.test(texto)) {
+          throw new Error("banco indisponível");
+        }
+        return banco.db.query(texto, params);
+      },
+    } as typeof banco.db;
+
+    const provedor = criarProvedorInstantly(
+      { apiKey: CHAVE, campanhaInstantly: CAMPANHA, db: dbQuebrado },
+      { fetch: fake },
+    );
+
+    const resultado = await provedor.enviar(
+      email({ assunto: "Saiu mas não gravou" }),
+    );
+
+    // O e-mail saiu: relatar falha faria o lote reenviar.
+    expect(resultado).toEqual({
+      enviado: true,
+      externalId: "lead_gravacao",
+      sombra: false,
+    });
+
+    const { rows } = await banco.db.query<{ payload: { assunto: string } }>(
+      `select payload from events
+       where tenant_id = $1 and kind = 'envio_sem_registro'
+       order by created_at desc limit 1`,
+      [banco.tenantId],
+    );
+    expect(rows[0]?.payload.assunto).toBe("Saiu mas não gravou");
+  });
+
   it("omite campos nulos em vez de mandar null", async () => {
     const fake = fetchFalso([respostaJson({ id: "lead_127" })]);
     await provedor(fake).enviar(

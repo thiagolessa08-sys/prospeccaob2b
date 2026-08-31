@@ -1,6 +1,7 @@
 import { fetchJson, type FetchLike } from "../http/fetch-json.js";
 import type { Db } from "../db/port.js";
 import { anexarMensagem } from "../db/repositories/messages.js";
+import { registrarEvento } from "../db/repositories/events.js";
 import type {
   ColdEmailProvider,
   EmailParaEnviar,
@@ -72,15 +73,39 @@ export function criarProvedorInstantly(
 
       // Só grava depois do sucesso: uma mensagem gravada é uma mensagem que o
       // lead recebeu, e o disjuntor conta em cima disso.
-      await anexarMensagem(config.db, {
-        tenantId: email.tenantId,
-        leadId: email.leadId,
-        direction: "outbound",
-        subject: email.assunto,
-        body: email.corpo,
-        externalId: externalId ?? undefined,
-        shadow: false,
-      });
+      //
+      // A gravação é protegida porque o e-mail JÁ saiu. Deixar a exceção
+      // escapar abortaria o lote inteiro; devolver falha faria o lote reenviar,
+      // e o prospect receberia a mesma mensagem duas vezes. Registramos a
+      // inconsistência para conciliação e relatamos sucesso — porque foi o que
+      // de fato aconteceu.
+      try {
+        await anexarMensagem(config.db, {
+          tenantId: email.tenantId,
+          leadId: email.leadId,
+          direction: "outbound",
+          subject: email.assunto,
+          body: email.corpo,
+          externalId: externalId ?? undefined,
+          shadow: false,
+        });
+      } catch (erro) {
+        await registrarEvento(config.db, {
+          tenantId: email.tenantId,
+          leadId: email.leadId,
+          kind: "envio_sem_registro",
+          payload: {
+            externalId,
+            assunto: email.assunto,
+            corpo: email.corpo,
+            erro: erro instanceof Error ? erro.message : String(erro),
+          },
+        }).catch(() => {
+          // Se nem o evento grava, o banco está fora e não há mais o que
+          // fazer daqui. O lote segue: um e-mail já entregue não deve
+          // derrubar os outros quarenta e nove.
+        });
+      }
 
       return { enviado: true, externalId, sombra: false };
     },
