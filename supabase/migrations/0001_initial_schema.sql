@@ -85,12 +85,18 @@ create index leads_resume_idx
 
 -- updated_at tem default now(), mas default só vale no insert: sem gatilho a
 -- coluna congela no momento da criação e passa a mentir sobre o lead.
-create function set_updated_at() returns trigger as $$
+-- search_path fixo: função de gatilho com caminho de busca mutável é vetor de
+-- sequestro de nome e é apontada pelo linter do Supabase. now() continua
+-- resolvendo, porque pg_catalog é sempre consultado.
+create function set_updated_at() returns trigger
+  language plpgsql
+  set search_path = ''
+as $$
 begin
   new.updated_at = now();
   return new;
 end;
-$$ language plpgsql;
+$$;
 
 create trigger leads_set_updated_at
   before update on leads
