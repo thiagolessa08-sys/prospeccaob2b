@@ -114,15 +114,24 @@ export function criarProvedorInstantly(
      * Devolve `null` em qualquer falha em vez de lançar: o disjuntor não pode
      * ser derrubado por uma indisponibilidade da analytics — ele simplesmente
      * não avalia neste ciclo.
+     *
+     * A campanha consultada é a do fornecedor (`config.campanhaInstantly`).
+     * Hoje ela é única e global, então estes números são do workspace inteiro
+     * — por isso `enviarLote` não os usa. Ficam aqui para o painel e para
+     * quando cada campanha tiver o seu próprio id no fornecedor.
      */
-    async contarBounces(campaignId: string) {
+    async contarBounces() {
       try {
-        const parametros = new URLSearchParams({ id: campaignId });
+        const parametros = new URLSearchParams({
+          id: config.campanhaInstantly,
+        });
         const resposta = await fetchJson<RespostaAnalytics[]>(
           `${BASE}/campaigns/analytics?${parametros}`,
           { fetch: deps.fetch, headers: cabecalhos, tentativas: 2 },
         );
-        const linha = resposta.find((r) => r.campaign_id === campaignId);
+        const linha = resposta.find(
+          (r) => r.campaign_id === config.campanhaInstantly,
+        );
         if (!linha) return null;
         return {
           enviados: linha.emails_sent_count ?? 0,

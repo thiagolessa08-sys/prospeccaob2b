@@ -75,6 +75,31 @@ async function cenario(quantosLeads: number, dailySendLimit = 20) {
   return { campanha, leads };
 }
 
+/**
+ * Escreve histórico de envio real no banco — que é de onde o disjuntor lê.
+ *
+ * Vai direto no SQL de propósito: é justamente a fonte local que o disjuntor
+ * consulta, e um teste que entrega a contagem pronta ao provedor não prova
+ * nada sobre a produção.
+ */
+async function simularHistorico(
+  leads: readonly { id: string }[],
+  quantosBounces = 0,
+) {
+  for (const lead of leads) {
+    await banco.db.query(
+      `insert into messages (tenant_id, lead_id, direction, body, shadow)
+       values ($1, $2, 'outbound', 'histórico', false)`,
+      [banco.tenantId, lead.id],
+    );
+  }
+  for (let i = 0; i < quantosBounces; i++) {
+    await banco.db.query(`update leads set bounced_at = now() where id = $1`, [
+      leads[i]!.id,
+    ]);
+  }
+}
+
 function provedorFalso(): ColdEmailProvider & { enviados: string[] } {
   const enviados: string[] = [];
   return {
@@ -230,16 +255,10 @@ describe("enviarLote — recusas", () => {
 });
 
 describe("enviarLote — disjuntor", () => {
-  it("pausa a campanha e não envia quando o bounce passa do limite", async () => {
-    const { campanha } = await cenario(2);
-    const provedor: ColdEmailProvider = {
-      async enviar() {
-        return { enviado: true, externalId: "x", sombra: false };
-      },
-      async contarBounces() {
-        return { enviados: 100, bounces: 10 };
-      },
-    };
+  it("pausa a campanha e não envia quando o bounce local passa do limite", async () => {
+    const { campanha, leads } = await cenario(21, 50);
+    await simularHistorico(leads, 2); // 2/21 = 9,5%
+    const provedor = provedorFalso();
 
     const resultado = await enviarLote(
       { db: banco.db, tenantId: banco.tenantId, campaignId: campanha.id, provedor },
@@ -248,12 +267,34 @@ describe("enviarLote — disjuntor", () => {
 
     expect(resultado.disjuntorAberto).toBe(true);
     expect(resultado.enviados).toBe(0);
+    expect(provedor.enviados).toHaveLength(0);
 
     const relida = await buscarCampanha(banco.db, banco.tenantId, campanha.id);
     expect(relida?.status).toBe("paused");
   });
 
-  it("segue normalmente quando o provedor não sabe informar bounces", async () => {
+  it("ignora a contagem do fornecedor: ela é do workspace inteiro", async () => {
+    const { campanha } = await cenario(1);
+    const provedor: ColdEmailProvider = {
+      async enviar() {
+        return { enviado: true, externalId: "x", sombra: false };
+      },
+      // Números catastróficos — de outro tenant. Não podem pausar esta campanha.
+      async contarBounces() {
+        return { enviados: 100, bounces: 90 };
+      },
+    };
+
+    const resultado = await enviarLote(
+      { db: banco.db, tenantId: banco.tenantId, campaignId: campanha.id, provedor },
+      { escreverEmail: escreverEmailFalso as never },
+    );
+
+    expect(resultado.disjuntorAberto).toBe(false);
+    expect(resultado.enviados).toBe(1);
+  });
+
+  it("segue normalmente quando não há histórico nenhum", async () => {
     const { campanha } = await cenario(1);
     const resultado = await enviarLote(
       { db: banco.db, tenantId: banco.tenantId, campaignId: campanha.id, provedor: provedorFalso() },
@@ -261,5 +302,42 @@ describe("enviarLote — disjuntor", () => {
     );
     expect(resultado.disjuntorAberto).toBe(false);
     expect(resultado.enviados).toBe(1);
+  });
+
+  it("avisa quando a amostra é significativa e não há nenhum bounce", async () => {
+    const { campanha, leads } = await cenario(20, 50);
+    await simularHistorico(leads, 0);
+
+    await enviarLote(
+      { db: banco.db, tenantId: banco.tenantId, campaignId: campanha.id, provedor: provedorFalso() },
+      { escreverEmail: escreverEmailFalso as never },
+    );
+
+    const { rows } = await banco.db.query<{ payload: { campaignId: string; enviados: number } }>(
+      `select payload from events
+       where tenant_id = $1 and kind = 'disjuntor_sem_fonte_de_bounce'
+         and payload->>'campaignId' = $2`,
+      [banco.tenantId, campanha.id],
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.payload.enviados).toBe(20);
+  });
+
+  it("não avisa quando a amostra ainda é pequena", async () => {
+    const { campanha, leads } = await cenario(3, 50);
+    await simularHistorico(leads, 0);
+
+    await enviarLote(
+      { db: banco.db, tenantId: banco.tenantId, campaignId: campanha.id, provedor: provedorFalso() },
+      { escreverEmail: escreverEmailFalso as never },
+    );
+
+    const { rows } = await banco.db.query(
+      `select 1 from events
+       where tenant_id = $1 and kind = 'disjuntor_sem_fonte_de_bounce'
+         and payload->>'campaignId' = $2`,
+      [banco.tenantId, campanha.id],
+    );
+    expect(rows).toHaveLength(0);
   });
 });

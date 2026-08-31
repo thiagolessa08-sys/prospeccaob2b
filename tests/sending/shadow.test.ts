@@ -102,6 +102,6 @@ describe("provedor de sombra", () => {
 
   it("não sabe informar bounces", async () => {
     const provedor = criarProvedorDeSombra(banco.db);
-    expect(await provedor.contarBounces("qualquer-campanha")).toBeNull();
+    expect(await provedor.contarBounces()).toBeNull();
   });
 });

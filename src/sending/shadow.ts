@@ -40,7 +40,7 @@ export function criarProvedorDeSombra(db: Db): ColdEmailProvider {
       return { enviado: true, externalId: null, sombra: true };
     },
 
-    async contarBounces() {
+    async contarBounces(): Promise<null> {
       // Nada saiu, então não há bounce que a sombra possa relatar.
       return null;
     },

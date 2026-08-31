@@ -25,8 +25,13 @@ export type ResultadoDoEnvio =
  */
 export interface ColdEmailProvider {
   enviar(email: EmailParaEnviar): Promise<ResultadoDoEnvio>;
-  /** `null` quando o fornecedor não sabe informar — a sombra, por exemplo. */
-  contarBounces(
-    campaignId: string,
-  ): Promise<{ enviados: number; bounces: number } | null>;
+  /**
+   * `null` quando o fornecedor não sabe informar — a sombra, por exemplo.
+   *
+   * Sem parâmetro de propósito: o provedor já sabe qual é a campanha *dele*.
+   * Passar o id da nossa campanha era o bug — o adaptador do Instantly tratava
+   * o UUID do nosso banco como id do Instantly, nunca casava, e o disjuntor
+   * caía calado no fallback local.
+   */
+  contarBounces(): Promise<{ enviados: number; bounces: number } | null>;
 }

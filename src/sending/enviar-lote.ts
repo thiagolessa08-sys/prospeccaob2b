@@ -11,7 +11,7 @@ import {
 import { carregarRegrasDeSupressao } from "../db/repositories/suppression.js";
 import { registrarEvento } from "../db/repositories/events.js";
 import { isSuppressed } from "../domain/suppression.js";
-import { avaliarDisjuntor } from "../domain/bounce.js";
+import { avaliarDisjuntor, AMOSTRA_MINIMA } from "../domain/bounce.js";
 import { writeFirstEmail } from "../ai/email-writer.js";
 import type { ColdEmailProvider } from "./types.js";
 
@@ -61,12 +61,34 @@ export async function enviarLote(
 
   // O disjuntor roda antes de qualquer envio: uma campanha que já está
   // queimando reputação não deve mandar nem mais um e-mail.
-  const doProvedor = await provedor.contarBounces(campaignId);
-  const contagem = doProvedor ?? (await contarEnviosEBounces(db, tenantId, campaignId));
+  //
+  // A contagem local é a única que respeita o tenant: hoje há um único
+  // INSTANTLY_CAMPAIGN_ID global, então os números do fornecedor são do
+  // workspace inteiro, e a lista ruim de um cliente pausaria a campanha de
+  // outro. Quando cada campanha tiver seu id no fornecedor, reavaliar — a
+  // reputação é medida do lado dele.
+  const contagem = await contarEnviosEBounces(db, tenantId, campaignId);
   const disjuntor = avaliarDisjuntor(contagem);
   if (disjuntor.abrir) {
     await pausarCampanha(db, tenantId, campaignId, disjuntor.motivo);
     return { ...vazio, disjuntorAberto: true, motivo: disjuntor.motivo };
+  }
+
+  // Enquanto ninguém gravar `leads.bounced_at`, zero bounce numa amostra
+  // grande é indistinguível de uma campanha saudável — e o disjuntor fica
+  // inerte em silêncio. O evento existe para que a inércia seja barulhenta.
+  if (contagem.bounces === 0 && contagem.enviados >= AMOSTRA_MINIMA) {
+    await registrarEvento(db, {
+      tenantId,
+      leadId: null,
+      kind: "disjuntor_sem_fonte_de_bounce",
+      payload: {
+        campaignId,
+        enviados: contagem.enviados,
+        aviso:
+          "Nenhum bounce registrado numa amostra significativa. Enquanto o webhook do Instantly não gravar leads.bounced_at, o disjuntor não tem como abrir.",
+      },
+    });
   }
 
   const prontos = await listarProntosParaContato(

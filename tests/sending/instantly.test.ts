@@ -194,17 +194,38 @@ describe("criarProvedorInstantly — contarBounces", () => {
     const fake = fetchFalso([
       respostaJson([{ campaign_id: CAMPANHA, emails_sent_count: 120, bounced_count: 5 }]),
     ]);
-    const contagem = await provedor(fake).contarBounces(CAMPANHA);
+    const contagem = await provedor(fake).contarBounces();
     expect(contagem).toEqual({ enviados: 120, bounces: 5 });
+  });
+
+  it("consulta a campanha do Instantly, não a nossa", async () => {
+    const fake = fetchFalso([
+      respostaJson([{ campaign_id: CAMPANHA, emails_sent_count: 40, bounced_count: 2 }]),
+    ]);
+    const contagem = await provedor(fake).contarBounces();
+
+    // O id na query é o do fornecedor. Se voltasse a ser o UUID do nosso
+    // banco, o `find` nunca casaria e o disjuntor ficaria cego.
+    expect(fake.chamadas[0]).toContain(`id=${CAMPANHA}`);
+    expect(contagem).toEqual({ enviados: 40, bounces: 2 });
+  });
+
+  it("ignora linhas de outra campanha do workspace", async () => {
+    const fake = fetchFalso([
+      respostaJson([
+        { campaign_id: "outra-campanha", emails_sent_count: 999, bounced_count: 500 },
+      ]),
+    ]);
+    expect(await provedor(fake).contarBounces()).toBeNull();
   });
 
   it("devolve null quando a analytics não traz a campanha", async () => {
     const fake = fetchFalso([respostaJson([])]);
-    expect(await provedor(fake).contarBounces(CAMPANHA)).toBeNull();
+    expect(await provedor(fake).contarBounces()).toBeNull();
   });
 
   it("devolve null em falha, em vez de derrubar o disjuntor", async () => {
     const fake = fetchFalso([respostaVazia(500), respostaVazia(500)]);
-    expect(await provedor(fake).contarBounces(CAMPANHA)).toBeNull();
+    expect(await provedor(fake).contarBounces()).toBeNull();
   });
 });
