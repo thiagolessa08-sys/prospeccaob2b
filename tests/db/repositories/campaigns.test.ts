@@ -5,7 +5,13 @@ import {
   buscarCampanha,
   salvarFiltros,
   listarCampanhasAtivas,
+  contarEnviosEBounces,
+  pausarCampanha,
+  definirModoDeEnvio,
 } from "../../../src/db/repositories/campaigns.js";
+import { salvarEmpresas } from "../../../src/db/repositories/companies.js";
+import { criarLead } from "../../../src/db/repositories/leads.js";
+import { anexarMensagem } from "../../../src/db/repositories/messages.js";
 
 let banco: BancoDeTeste;
 
@@ -122,5 +128,191 @@ describe("listarCampanhasAtivas", () => {
     const ativas = await listarCampanhasAtivas(banco.db, banco.tenantId);
     expect(ativas.map((c) => c.id)).not.toContain(pausada.id);
     expect(ativas.length).toBeGreaterThan(0);
+  });
+});
+
+describe("contarEnviosEBounces", () => {
+  it("conta só o que saiu de verdade, ignorando sombra e recebidas", async () => {
+    const campanha = await criarCampanha(banco.db, {
+      tenantId: banco.tenantId,
+      ...base,
+      name: "Para contar",
+    });
+    await salvarEmpresas(banco.db, [
+      {
+        tenantId: banco.tenantId,
+        campaignId: campanha.id,
+        cnpj: "91111111000101",
+        legalName: "Empresa da contagem",
+        tradeName: null,
+        website: null,
+        city: null,
+        uf: null,
+        employeeCount: null,
+        summary: null,
+        source: "cnpj",
+      },
+    ]);
+    const { rows } = await banco.db.query<{ id: string }>(
+      `select id from companies where cnpj = '91111111000101'`,
+    );
+    const lead = await criarLead(banco.db, {
+      tenantId: banco.tenantId,
+      campaignId: campanha.id,
+      companyId: rows[0]!.id,
+      fullName: "Contagem",
+      roleTitle: null,
+      email: "contagem@exemplo.com",
+      emailVerified: true,
+    });
+
+    await anexarMensagem(banco.db, {
+      tenantId: banco.tenantId,
+      leadId: lead.id,
+      direction: "outbound",
+      body: "enviada de verdade",
+    });
+    await banco.db.query(
+      `insert into messages (tenant_id, lead_id, direction, body, shadow)
+       values ($1, $2, 'outbound', 'só sombra', true)`,
+      [banco.tenantId, lead.id],
+    );
+    await anexarMensagem(banco.db, {
+      tenantId: banco.tenantId,
+      leadId: lead.id,
+      direction: "inbound",
+      body: "resposta do lead",
+    });
+
+    const contagem = await contarEnviosEBounces(
+      banco.db,
+      banco.tenantId,
+      campanha.id,
+    );
+    expect(contagem.enviados).toBe(1);
+    expect(contagem.bounces).toBe(0);
+  });
+
+  it("conta leads marcados com bounce", async () => {
+    const campanha = await criarCampanha(banco.db, {
+      tenantId: banco.tenantId,
+      ...base,
+      name: "Com bounce",
+    });
+    await salvarEmpresas(banco.db, [
+      {
+        tenantId: banco.tenantId,
+        campaignId: campanha.id,
+        cnpj: "92222222000101",
+        legalName: "Empresa do bounce",
+        tradeName: null,
+        website: null,
+        city: null,
+        uf: null,
+        employeeCount: null,
+        summary: null,
+        source: "cnpj",
+      },
+    ]);
+    const { rows } = await banco.db.query<{ id: string }>(
+      `select id from companies where cnpj = '92222222000101'`,
+    );
+    const lead = await criarLead(banco.db, {
+      tenantId: banco.tenantId,
+      campaignId: campanha.id,
+      companyId: rows[0]!.id,
+      fullName: null,
+      roleTitle: null,
+      email: "quebrou@exemplo.com",
+      emailVerified: true,
+    });
+    await banco.db.query(`update leads set bounced_at = now() where id = $1`, [
+      lead.id,
+    ]);
+
+    const contagem = await contarEnviosEBounces(
+      banco.db,
+      banco.tenantId,
+      campanha.id,
+    );
+    expect(contagem.bounces).toBe(1);
+  });
+
+  it("devolve números, não strings vindas do driver", async () => {
+    const campanha = await criarCampanha(banco.db, {
+      tenantId: banco.tenantId,
+      ...base,
+      name: "Tipos da contagem",
+    });
+    const contagem = await contarEnviosEBounces(
+      banco.db,
+      banco.tenantId,
+      campanha.id,
+    );
+    expect(typeof contagem.enviados).toBe("number");
+    expect(typeof contagem.bounces).toBe("number");
+  });
+
+  it("não conta o que é de outra campanha", async () => {
+    const campanha = await criarCampanha(banco.db, {
+      tenantId: banco.tenantId,
+      ...base,
+      name: "Isolada",
+    });
+    const contagem = await contarEnviosEBounces(
+      banco.db,
+      banco.tenantId,
+      campanha.id,
+    );
+    expect(contagem.enviados).toBe(0);
+  });
+});
+
+describe("pausarCampanha", () => {
+  it("muda o status e some da lista de ativas", async () => {
+    const campanha = await criarCampanha(banco.db, {
+      tenantId: banco.tenantId,
+      ...base,
+      name: "Para pausar",
+    });
+    await pausarCampanha(
+      banco.db,
+      banco.tenantId,
+      campanha.id,
+      "bounce acima do limite",
+    );
+
+    const relida = await buscarCampanha(banco.db, banco.tenantId, campanha.id);
+    expect(relida?.status).toBe("paused");
+
+    const ativas = await listarCampanhasAtivas(banco.db, banco.tenantId);
+    expect(ativas.map((c) => c.id)).not.toContain(campanha.id);
+  });
+
+  it("é idempotente: pausar duas vezes não quebra", async () => {
+    const campanha = await criarCampanha(banco.db, {
+      tenantId: banco.tenantId,
+      ...base,
+      name: "Pausada duas vezes",
+    });
+    await pausarCampanha(banco.db, banco.tenantId, campanha.id, "primeira");
+    await expect(
+      pausarCampanha(banco.db, banco.tenantId, campanha.id, "segunda"),
+    ).resolves.toBeUndefined();
+  });
+});
+
+describe("definirModoDeEnvio", () => {
+  it("promove a campanha de sombra para produção", async () => {
+    const campanha = await criarCampanha(banco.db, {
+      tenantId: banco.tenantId,
+      ...base,
+      name: "Promovida",
+    });
+    expect(campanha.send_mode).toBe("shadow");
+
+    await definirModoDeEnvio(banco.db, banco.tenantId, campanha.id, "live");
+    const relida = await buscarCampanha(banco.db, banco.tenantId, campanha.id);
+    expect(relida?.send_mode).toBe("live");
   });
 });
