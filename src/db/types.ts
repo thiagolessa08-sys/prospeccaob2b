@@ -66,6 +66,7 @@ export interface Lead {
   exchange_count: number;
   resume_at: string | null;
   needs_human: boolean;
+  handoff_reason: string | null;
   created_at: string;
   updated_at: string;
 }
