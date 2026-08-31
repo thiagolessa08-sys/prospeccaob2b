@@ -186,7 +186,18 @@ export async function enviarLote(
         continue;
       }
 
-      await transicionarLead(db, tenantId, lead.id, "contacted");
+      // Em sombra o estágio não avança: o ensaio não pode consumir a fila. A
+      // linha em `messages` com shadow = true é o registro do que teria saído,
+      // e o lead continua elegível para o envio de verdade.
+      //
+      // `enriched -> contacted` é legal, `contacted -> enriched` não é, e
+      // `listarProntosParaContato` só enxerga `enriched`: avançar aqui
+      // queimaria a fila para sempre, e a promoção da campanha para live
+      // enviaria para ninguém. Como consequência, rodar a sombra duas vezes
+      // regera rascunhos para os mesmos leads — que é o certo para um ensaio.
+      if (!resultado.sombra) {
+        await transicionarLead(db, tenantId, lead.id, "contacted");
+      }
       enviados += 1;
     } catch (erro) {
       falhas += 1;

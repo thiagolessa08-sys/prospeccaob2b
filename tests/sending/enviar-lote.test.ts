@@ -2,9 +2,15 @@ import { describe, it, expect, beforeEach, beforeAll, afterAll, vi } from "vites
 import { subirBanco, type BancoDeTeste } from "../helpers/pg.js";
 import { criarCampanha, definirModoDeEnvio, buscarCampanha } from "../../src/db/repositories/campaigns.js";
 import { salvarEmpresas } from "../../src/db/repositories/companies.js";
-import { criarLead, buscarLead } from "../../src/db/repositories/leads.js";
+import {
+  criarLead,
+  buscarLead,
+  listarProntosParaContato,
+} from "../../src/db/repositories/leads.js";
+import { carregarConversa } from "../../src/db/repositories/messages.js";
 import { adicionarSupressao } from "../../src/db/repositories/suppression.js";
 import { enviarLote } from "../../src/sending/enviar-lote.js";
+import { criarProvedorDeSombra } from "../../src/sending/shadow.js";
 import type { ColdEmailProvider } from "../../src/sending/types.js";
 
 let banco: BancoDeTeste;
@@ -26,8 +32,12 @@ const base = {
   senderFirstName: "Thiago",
 };
 
-/** Cria uma campanha em modo `live` com N leads prontos para contato. */
-async function cenario(quantosLeads: number, dailySendLimit = 20) {
+/** Cria uma campanha com N leads prontos para contato. `live` por padrão. */
+async function cenario(
+  quantosLeads: number,
+  dailySendLimit = 20,
+  modo: "shadow" | "live" = "live",
+) {
   contador += 1;
   const campanha = await criarCampanha(banco.db, {
     tenantId: banco.tenantId,
@@ -35,7 +45,7 @@ async function cenario(quantosLeads: number, dailySendLimit = 20) {
     name: `Lote ${contador}`,
     dailySendLimit,
   });
-  await definirModoDeEnvio(banco.db, banco.tenantId, campanha.id, "live");
+  await definirModoDeEnvio(banco.db, banco.tenantId, campanha.id, modo);
 
   const cnpj = `9500000${String(contador).padStart(2, "0")}000101`;
   await salvarEmpresas(banco.db, [
@@ -251,6 +261,67 @@ describe("enviarLote — recusas", () => {
 
     expect(resultado.falhas).toBe(1);
     expect(resultado.enviados).toBe(1);
+  });
+});
+
+describe("enviarLote — a sombra não queima a fila", () => {
+  it("deixa o lead em enriched, ainda pronto para o envio de verdade", async () => {
+    const { campanha, leads } = await cenario(2, 20, "shadow");
+    const provedor = criarProvedorDeSombra(banco.db);
+
+    const resultado = await enviarLote(
+      { db: banco.db, tenantId: banco.tenantId, campaignId: campanha.id, provedor },
+      { escreverEmail: escreverEmailFalso as never },
+    );
+
+    expect(resultado.enviados).toBe(2);
+    for (const lead of leads) {
+      const relido = await buscarLead(banco.db, banco.tenantId, lead.id);
+      expect(relido?.stage).toBe("enriched");
+    }
+
+    // `enriched -> contacted` é irreversível: se o ensaio avançasse o
+    // estágio, promover a campanha para live enviaria para ninguém.
+    const prontos = await listarProntosParaContato(
+      banco.db,
+      banco.tenantId,
+      campanha.id,
+      20,
+    );
+    expect(prontos.map((l) => l.id).sort()).toEqual(leads.map((l) => l.id).sort());
+  });
+
+  it("grava a mensagem do ensaio com a marca de sombra", async () => {
+    const { campanha, leads } = await cenario(1, 20, "shadow");
+
+    await enviarLote(
+      {
+        db: banco.db,
+        tenantId: banco.tenantId,
+        campaignId: campanha.id,
+        provedor: criarProvedorDeSombra(banco.db),
+      },
+      { escreverEmail: escreverEmailFalso as never },
+    );
+
+    const conversa = await carregarConversa(banco.db, banco.tenantId, leads[0]!.id);
+    expect(conversa).toHaveLength(1);
+    expect(conversa[0]!.shadow).toBe(true);
+  });
+
+  it("no modo live o lead avança e sai da fila", async () => {
+    const { campanha, leads } = await cenario(1);
+
+    await enviarLote(
+      { db: banco.db, tenantId: banco.tenantId, campaignId: campanha.id, provedor: provedorFalso() },
+      { escreverEmail: escreverEmailFalso as never },
+    );
+
+    const relido = await buscarLead(banco.db, banco.tenantId, leads[0]!.id);
+    expect(relido?.stage).toBe("contacted");
+    expect(
+      await listarProntosParaContato(banco.db, banco.tenantId, campanha.id, 20),
+    ).toHaveLength(0);
   });
 });
 
