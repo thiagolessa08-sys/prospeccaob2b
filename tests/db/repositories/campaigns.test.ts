@@ -300,6 +300,24 @@ describe("pausarCampanha", () => {
       pausarCampanha(banco.db, banco.tenantId, campanha.id, "segunda"),
     ).resolves.toBeUndefined();
   });
+
+  it("registra o evento uma vez só, mesmo pausando duas vezes", async () => {
+    const campanha = await criarCampanha(banco.db, {
+      tenantId: banco.tenantId,
+      ...base,
+      name: "Evento único",
+    });
+    await pausarCampanha(banco.db, banco.tenantId, campanha.id, "primeira");
+    await pausarCampanha(banco.db, banco.tenantId, campanha.id, "segunda");
+
+    const { rows } = await banco.db.query<{ total: number }>(
+      `select count(*)::int as total from events
+       where tenant_id = $1 and kind = 'campanha_pausada'
+         and payload->>'campaignId' = $2`,
+      [banco.tenantId, campanha.id],
+    );
+    expect(rows[0]!.total).toBe(1);
+  });
 });
 
 describe("definirModoDeEnvio", () => {
