@@ -81,6 +81,17 @@ export async function buscarLead(
  * A validação usa a mesma máquina de estados do domínio (`assertTransition`),
  * então o banco nunca guarda um caminho que o funil não permite — e o lead
  * fica intacto quando a transição é recusada.
+ *
+ * O UPDATE é condicionado ao estágio que acabou de ser lido e validado
+ * (compare-and-swap). Sem isso, ler-validar-escrever é uma corrida: um webhook
+ * de resposta e a varredura de follow-up podem ler `enriched` ao mesmo tempo,
+ * ambos aprovar, e ambos escrever — deixando o lead num estágio que o funil
+ * nunca autorizou. É exatamente o instante em que os leads com `resume_at`
+ * vencido acordam. Zero linhas de volta significa que outro fluxo moveu o lead
+ * primeiro; lançamos, e quem chamou decide se relê e tenta de novo.
+ *
+ * O teste não enxerga essa corrida por construção: o PGlite é uma única
+ * conexão serializada, enquanto o `pg.Pool` distribui cinco.
  */
 export async function transicionarLead(
   db: Db,
@@ -103,7 +114,7 @@ export async function transicionarLead(
        handoff_reason = coalesce($5, handoff_reason),
        needs_human = coalesce($6, needs_human),
        resume_at = coalesce($7, resume_at)
-     where tenant_id = $1 and id = $2
+     where tenant_id = $1 and id = $2 and stage = $8
      returning ${COLUNAS}`,
     [
       tenantId,
@@ -113,9 +124,16 @@ export async function transicionarLead(
       extras.handoffReason ?? null,
       extras.needsHuman ?? null,
       extras.resumeAt ?? null,
+      atual.stage,
     ],
   );
-  return rows[0]!;
+  if (!rows[0]) {
+    throw new Error(
+      `Lead ${id} mudou de estágio ao mesmo tempo: esperava ${atual.stage} ` +
+        `para aplicar ${atual.stage} -> ${para}, mas outro fluxo moveu antes.`,
+    );
+  }
+  return rows[0];
 }
 
 export async function incrementarTrocas(

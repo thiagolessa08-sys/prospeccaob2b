@@ -12,6 +12,7 @@ import {
   incrementarTrocas,
   listarProntosParaContato,
 } from "../../../src/db/repositories/leads.js";
+import type { Db } from "../../../src/db/port.js";
 
 let banco: BancoDeTeste;
 let empresaId: string;
@@ -143,6 +144,42 @@ describe("transicionarLead", () => {
     });
     const relido = await buscarLead(banco.db, banco.tenantId, lead.id);
     expect(relido!.resume_at!.toISOString()).toBe(quando.toISOString());
+  });
+
+  it("recusa a escrita quando outro fluxo move o lead entre a leitura e a escrita", async () => {
+    const lead = await criarLead(banco.db, novoLead());
+
+    // O PGlite é uma conexão só e serializa tudo, então a corrida real —
+    // webhook de resposta e varredura de follow-up tocando o mesmo lead no
+    // mesmo segundo, com o `pg.Pool` distribuindo cinco conexões — não
+    // acontece aqui sozinha. Interpomos no porte para produzir exatamente a
+    // intercalação: alguém escreve entre o SELECT e o UPDATE.
+    let jaInterferiu = false;
+    const dbComCorrida: Db = {
+      query: async <T = Record<string, unknown>>(
+        text: string,
+        params?: readonly unknown[],
+      ) => {
+        const resultado = await banco.db.query<T>(text, params);
+        if (!jaInterferiu && /from leads/i.test(text)) {
+          jaInterferiu = true;
+          await banco.db.query(
+            `update leads set stage = 'contacted' where id = $1`,
+            [lead.id],
+          );
+        }
+        return resultado;
+      },
+    };
+
+    await expect(
+      transicionarLead(dbComCorrida, banco.tenantId, lead.id, "contacted"),
+    ).rejects.toThrow(/mudou de estágio ao mesmo tempo/i);
+
+    // O estágio é o que o outro fluxo escreveu — a segunda escrita não passou.
+    const relido = await buscarLead(banco.db, banco.tenantId, lead.id);
+    expect(relido?.stage).toBe("contacted");
+    expect(jaInterferiu).toBe(true);
   });
 
   it("lança quando o lead não existe", async () => {
