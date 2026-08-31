@@ -114,6 +114,7 @@ function provedorFalso(): ColdEmailProvider & { enviados: string[] } {
   const enviados: string[] = [];
   return {
     enviados,
+    modo: "live",
     async enviar(email) {
       enviados.push(email.email);
       return { enviado: true, externalId: `ext_${enviados.length}`, sombra: false };
@@ -225,6 +226,39 @@ describe("enviarLote — recusas", () => {
     expect(provedor.enviados).toHaveLength(0);
   });
 
+  it("recusa provedor live numa campanha em ensaio, antes de enviar nada", async () => {
+    const { campanha } = await cenario(2, 20, "shadow");
+    const provedor = provedorFalso(); // modo "live"
+
+    const resultado = await enviarLote(
+      { db: banco.db, tenantId: banco.tenantId, campaignId: campanha.id, provedor },
+      { escreverEmail: escreverEmailFalso as never },
+    );
+
+    expect(resultado.enviados).toBe(0);
+    expect(resultado.motivo).toMatch(/modo "shadow".*provedor "live"/);
+    expect(provedor.enviados).toHaveLength(0);
+    expect(escreverEmailFalso).not.toHaveBeenCalled();
+  });
+
+  it("recusa provedor de sombra numa campanha live", async () => {
+    const { campanha } = await cenario(2);
+
+    const resultado = await enviarLote(
+      {
+        db: banco.db,
+        tenantId: banco.tenantId,
+        campaignId: campanha.id,
+        provedor: criarProvedorDeSombra(banco.db),
+      },
+      { escreverEmail: escreverEmailFalso as never },
+    );
+
+    expect(resultado.enviados).toBe(0);
+    expect(resultado.motivo).toMatch(/modo "live".*provedor "shadow"/);
+    expect(escreverEmailFalso).not.toHaveBeenCalled();
+  });
+
   it("recusa campanha inexistente", async () => {
     const resultado = await enviarLote(
       {
@@ -242,6 +276,7 @@ describe("enviarLote — recusas", () => {
     const { campanha } = await cenario(2);
     let primeira = true;
     const provedor: ColdEmailProvider = {
+      modo: "live",
       async enviar() {
         if (primeira) {
           primeira = false;
@@ -414,6 +449,7 @@ describe("enviarLote — disjuntor", () => {
   it("ignora a contagem do fornecedor: ela é do workspace inteiro", async () => {
     const { campanha } = await cenario(1);
     const provedor: ColdEmailProvider = {
+      modo: "live",
       async enviar() {
         return { enviado: true, externalId: "x", sombra: false };
       },

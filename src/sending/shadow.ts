@@ -20,6 +20,8 @@ import type {
  */
 export function criarProvedorDeSombra(db: Db): ColdEmailProvider {
   return {
+    modo: "shadow",
+
     async enviar(email: EmailParaEnviar): Promise<ResultadoDoEnvio> {
       await anexarMensagem(db, {
         tenantId: email.tenantId,

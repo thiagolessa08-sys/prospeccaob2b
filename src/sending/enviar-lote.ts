@@ -52,6 +52,16 @@ export async function enviarLote(
   if (!campanha) {
     return { ...vazio, motivo: "Campanha não encontrada." };
   }
+  // `campaigns.send_mode` só valia alguma coisa se alguém o lesse. Sem esta
+  // conferência, uma rota poderia montar o provedor do Instantly para uma
+  // campanha em ensaio e o desencontro só apareceria depois do primeiro e-mail
+  // na caixa de um estranho. Aqui ele aparece antes de qualquer envio.
+  if (campanha.send_mode !== provedor.modo) {
+    return {
+      ...vazio,
+      motivo: `Campanha em modo "${campanha.send_mode}" recebeu um provedor "${provedor.modo}". Recusado antes de enviar qualquer coisa.`,
+    };
+  }
   if (campanha.status !== "active") {
     return {
       ...vazio,

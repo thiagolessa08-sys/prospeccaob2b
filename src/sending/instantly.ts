@@ -38,6 +38,8 @@ export function criarProvedorInstantly(
   };
 
   return {
+    modo: "live",
+
     async enviar(email: EmailParaEnviar): Promise<ResultadoDoEnvio> {
       // Campos nulos são omitidos: o Instantly aceita ausência, e mandar null
       // explícito sobrescreveria dado que ele já tenha do lead.

@@ -71,6 +71,10 @@ function provedor(fake: ReturnType<typeof fetchFalso>) {
 }
 
 describe("criarProvedorInstantly — enviar", () => {
+  it("se declara em modo live", () => {
+    expect(provedor(fetchFalso([])).modo).toBe("live");
+  });
+
   it("relata sucesso com o id devolvido pelo Instantly", async () => {
     const fake = fetchFalso([respostaJson({ id: "lead_123" }, 200)]);
     const resultado = await provedor(fake).enviar(email());

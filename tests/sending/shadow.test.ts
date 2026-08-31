@@ -62,6 +62,10 @@ function email(overrides: Record<string, unknown> = {}) {
 }
 
 describe("provedor de sombra", () => {
+  it("se declara em modo sombra", () => {
+    expect(criarProvedorDeSombra(banco.db).modo).toBe("shadow");
+  });
+
   it("relata sucesso marcado como sombra, sem external id", async () => {
     const provedor = criarProvedorDeSombra(banco.db);
     const resultado = await provedor.enviar(email());

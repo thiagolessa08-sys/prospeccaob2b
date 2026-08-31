@@ -24,6 +24,8 @@ export type ResultadoDoEnvio =
  * servir, trocar de fornecedor precisa ser um arquivo, não uma reescrita.
  */
 export interface ColdEmailProvider {
+  /** O modo que este provedor implementa. `enviarLote` recusa se divergir da campanha. */
+  readonly modo: "shadow" | "live";
   enviar(email: EmailParaEnviar): Promise<ResultadoDoEnvio>;
   /**
    * `null` quando o fornecedor não sabe informar — a sombra, por exemplo.
