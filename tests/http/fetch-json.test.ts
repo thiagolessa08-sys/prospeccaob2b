@@ -118,6 +118,27 @@ describe("fetchJson — identificação", () => {
 
     expect(recebido?.["user-agent"]).toBe("prospeccao/0.1");
   });
+
+  it("manda método, headers e corpo próprios, preservando o user-agent padrão", async () => {
+    let recebido: RequestInit | undefined;
+    const espiao = (async (_input: unknown, init?: RequestInit) => {
+      recebido = init;
+      return respostaJson({ ok: true });
+    }) as typeof fetch;
+
+    await fetchJson("https://exemplo.com/a", {
+      fetch: espiao,
+      metodo: "POST",
+      headers: { authorization: "Bearer chave" },
+      corpo: JSON.stringify({ x: 1 }),
+    });
+
+    expect(recebido?.method).toBe("POST");
+    expect(recebido?.body).toBe(JSON.stringify({ x: 1 }));
+    const headers = recebido?.headers as Record<string, string>;
+    expect(headers.authorization).toBe("Bearer chave");
+    expect(headers["user-agent"]).toBe("prospeccao/0.1");
+  });
 });
 
 /**
