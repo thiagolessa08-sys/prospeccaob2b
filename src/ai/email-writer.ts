@@ -55,6 +55,7 @@ Regras invioláveis:
 - Nunca inclua link de agendamento neste primeiro e-mail.
 - Faça uma única pergunta clara no final, de baixo compromisso.
 - Não use saudações genéricas do tipo "Espero que esteja tudo bem".
+- Antes da assinatura, feche com uma única frase simples avisando que basta responder pedindo para não receber mais contato que o endereço será removido. Sem HTML e sem link de descadastro.
 - Assine apenas com o primeiro nome: ${voice.senderFirstName}. Sem bloco de assinatura.`;
 }
 

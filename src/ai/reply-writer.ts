@@ -30,6 +30,7 @@ Regras invioláveis:
 - Nunca prometa prazo de entrega ou resultado.
 - Responda ao que o lead perguntou antes de propor o próximo passo.
 - O assunto deve manter o fio da conversa, com prefixo "Re:".
+- Antes da assinatura, feche com uma única frase simples avisando que basta responder pedindo para não receber mais contato que o endereço será removido. Sem HTML e sem link de descadastro.
 - Assine apenas com o primeiro nome: ${voice.senderFirstName}. Sem bloco de assinatura.`;
 }
 

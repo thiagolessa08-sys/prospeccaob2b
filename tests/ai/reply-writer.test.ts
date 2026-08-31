@@ -103,6 +103,8 @@ describe("writeReply", () => {
     // A assinatura vem da campanha, e não da imaginação do modelo — se cada
     // módulo inventasse um nome, a mesma thread seria assinada por duas pessoas.
     expect(system.text).toContain("Thiago");
+    // Contato não solicitado precisa oferecer saída explícita (LGPD, art. 18).
+    expect(system.text).toMatch(/não receber mais/i);
   });
 
   it("escreve despedida cordial ao encerrar por recusa", async () => {

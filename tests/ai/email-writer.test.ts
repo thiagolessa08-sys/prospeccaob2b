@@ -48,6 +48,8 @@ describe("writeFirstEmail", () => {
     expect(system.cache_control).toEqual({ type: "ephemeral" });
     // O nome de quem assina vem da campanha: o modelo nunca deve inventá-lo.
     expect(system.text).toContain("Thiago");
+    // Contato não solicitado precisa oferecer saída explícita (LGPD, art. 18).
+    expect(system.text).toMatch(/não receber mais/i);
     // Dados voláteis ficam fora do prefixo cacheado.
     expect(system.text).not.toContain("Alfa Alimentos");
 
