@@ -16,10 +16,11 @@ export interface NovaMensagem {
   confidence?: number;
   aiReasoning?: string;
   externalId?: string;
+  shadow?: boolean;
 }
 
 const COLUNAS = `id, tenant_id, lead_id, direction, subject, body, intent,
-  confidence, ai_reasoning, external_id, created_at`;
+  confidence, ai_reasoning, external_id, created_at, shadow`;
 
 /**
  * Anexa uma mensagem à conversa.
@@ -61,8 +62,8 @@ export async function anexarMensagem(
   const { rows } = await db.query<Message>(
     `insert into messages
        (tenant_id, lead_id, direction, subject, body, intent, confidence,
-        ai_reasoning, external_id)
-     values ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        ai_reasoning, external_id, shadow)
+     values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
      on conflict (tenant_id, external_id) where external_id is not null
        do nothing
      returning ${COLUNAS}`,
@@ -76,6 +77,7 @@ export async function anexarMensagem(
       input.confidence ?? null,
       input.aiReasoning ?? null,
       input.externalId ?? null,
+      input.shadow ?? false,
     ],
   );
   return rows[0] ?? null;
