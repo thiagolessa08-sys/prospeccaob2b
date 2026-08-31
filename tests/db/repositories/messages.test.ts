@@ -1,0 +1,135 @@
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { subirBanco, type BancoDeTeste } from "../../helpers/pg.js";
+import { salvarEmpresas } from "../../../src/db/repositories/companies.js";
+import { criarLead } from "../../../src/db/repositories/leads.js";
+import {
+  anexarMensagem,
+  carregarConversa,
+} from "../../../src/db/repositories/messages.js";
+
+let banco: BancoDeTeste;
+let leadId: string;
+
+beforeAll(async () => {
+  banco = await subirBanco();
+  await salvarEmpresas(banco.db, [
+    {
+      tenantId: banco.tenantId,
+      campaignId: banco.campaignId,
+      cnpj: "88888888000101",
+      legalName: "Empresa das mensagens",
+      tradeName: null,
+      website: null,
+      city: null,
+      uf: null,
+      employeeCount: null,
+      summary: null,
+      source: "cnpj",
+    },
+  ]);
+  const { rows } = await banco.db.query<{ id: string }>(
+    `select id from companies where cnpj = '88888888000101'`,
+  );
+  const lead = await criarLead(banco.db, {
+    tenantId: banco.tenantId,
+    campaignId: banco.campaignId,
+    companyId: rows[0]!.id,
+    fullName: "João",
+    roleTitle: "Diretor",
+    email: "joao@mensagens.com.br",
+    emailVerified: true,
+  });
+  leadId = lead.id;
+}, 30_000);
+
+afterAll(async () => {
+  await banco.encerrar();
+});
+
+describe("anexarMensagem", () => {
+  it("grava uma mensagem enviada", async () => {
+    const msg = await anexarMensagem(banco.db, {
+      tenantId: banco.tenantId,
+      leadId,
+      direction: "outbound",
+      subject: "Integração de dados",
+      body: "Olá João...",
+    });
+    expect(msg?.direction).toBe("outbound");
+    expect(msg?.subject).toBe("Integração de dados");
+  });
+
+  it("grava a classificação junto da mensagem recebida", async () => {
+    const msg = await anexarMensagem(banco.db, {
+      tenantId: banco.tenantId,
+      leadId,
+      direction: "inbound",
+      body: "Quanto custa?",
+      intent: "question_or_objection",
+      confidence: 0.91,
+      aiReasoning: "Perguntou preço antes de aceitar conversar.",
+      externalId: "evt_classificada",
+    });
+    expect(msg?.intent).toBe("question_or_objection");
+    expect(Number(msg?.confidence)).toBeCloseTo(0.91);
+    expect(msg?.ai_reasoning).toContain("preço");
+  });
+
+  it("devolve null na reentrega do mesmo webhook, em vez de lançar", async () => {
+    const primeira = await anexarMensagem(banco.db, {
+      tenantId: banco.tenantId,
+      leadId,
+      direction: "inbound",
+      body: "mensagem única",
+      externalId: "evt_unico",
+    });
+    expect(primeira).not.toBeNull();
+
+    const repetida = await anexarMensagem(banco.db, {
+      tenantId: banco.tenantId,
+      leadId,
+      direction: "inbound",
+      body: "mensagem única",
+      externalId: "evt_unico",
+    });
+    expect(repetida).toBeNull();
+  });
+
+  it("permite várias mensagens sem external_id", async () => {
+    const a = await anexarMensagem(banco.db, {
+      tenantId: banco.tenantId,
+      leadId,
+      direction: "outbound",
+      body: "follow-up um",
+    });
+    const b = await anexarMensagem(banco.db, {
+      tenantId: banco.tenantId,
+      leadId,
+      direction: "outbound",
+      body: "follow-up dois",
+    });
+    expect(a).not.toBeNull();
+    expect(b).not.toBeNull();
+  });
+});
+
+describe("carregarConversa", () => {
+  it("devolve as mensagens do lead em ordem cronológica", async () => {
+    const conversa = await carregarConversa(banco.db, banco.tenantId, leadId);
+    expect(conversa.length).toBeGreaterThan(1);
+    for (let i = 1; i < conversa.length; i++) {
+      expect(conversa[i]!.created_at.getTime()).toBeGreaterThanOrEqual(
+        conversa[i - 1]!.created_at.getTime(),
+      );
+    }
+  });
+
+  it("devolve lista vazia para lead sem mensagens", async () => {
+    const conversa = await carregarConversa(
+      banco.db,
+      banco.tenantId,
+      "99999999-9999-9999-9999-999999999999",
+    );
+    expect(conversa).toEqual([]);
+  });
+});
