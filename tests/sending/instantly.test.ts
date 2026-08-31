@@ -11,6 +11,7 @@ let leadId: string;
 
 const CHAVE = "chave-instantly";
 const CAMPANHA = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
+const PREMISSA = "2026-08-31, suíte de testes";
 
 beforeAll(async () => {
   banco = await subirBanco();
@@ -65,10 +66,50 @@ function email(overrides: Record<string, unknown> = {}) {
 
 function provedor(fake: ReturnType<typeof fetchFalso>) {
   return criarProvedorInstantly(
-    { apiKey: CHAVE, campanhaInstantly: CAMPANHA, db: banco.db },
+    {
+      apiKey: CHAVE,
+      campanhaInstantly: CAMPANHA,
+      db: banco.db,
+      premissaValidadaEm: PREMISSA,
+    },
     { fetch: fake },
   );
 }
+
+describe("criarProvedorInstantly — trava da premissa", () => {
+  it("recusa a construção quando a premissa não foi validada", () => {
+    expect(() =>
+      criarProvedorInstantly({
+        apiKey: CHAVE,
+        campanhaInstantly: CAMPANHA,
+        db: banco.db,
+        premissaValidadaEm: "",
+      }),
+    ).toThrow(/premissa das custom variables não foi validada/i);
+  });
+
+  it("recusa também quando a nota é só espaço em branco", () => {
+    expect(() =>
+      criarProvedorInstantly({
+        apiKey: CHAVE,
+        campanhaInstantly: CAMPANHA,
+        db: banco.db,
+        premissaValidadaEm: "   ",
+      }),
+    ).toThrow(/Task 5, Step 1/);
+  });
+
+  it("aceita quando alguém registrou a validação", () => {
+    expect(() =>
+      criarProvedorInstantly({
+        apiKey: CHAVE,
+        campanhaInstantly: CAMPANHA,
+        db: banco.db,
+        premissaValidadaEm: PREMISSA,
+      }),
+    ).not.toThrow();
+  });
+});
 
 describe("criarProvedorInstantly — enviar", () => {
   it("se declara em modo live", () => {
@@ -155,7 +196,12 @@ describe("criarProvedorInstantly — enviar", () => {
     } as typeof banco.db;
 
     const provedor = criarProvedorInstantly(
-      { apiKey: CHAVE, campanhaInstantly: CAMPANHA, db: dbQuebrado },
+      {
+        apiKey: CHAVE,
+        campanhaInstantly: CAMPANHA,
+        db: dbQuebrado,
+        premissaValidadaEm: PREMISSA,
+      },
       { fetch: fake },
     );
 

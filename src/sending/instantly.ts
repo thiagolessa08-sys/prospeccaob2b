@@ -28,10 +28,38 @@ interface RespostaAnalytics {
   bounced_count?: number;
 }
 
+export interface ConfigDoInstantly {
+  apiKey: string;
+  campanhaInstantly: string;
+  db: Db;
+  /**
+   * Quando e por quem a premissa das `custom_variables` foi validada contra
+   * uma conta real — uma data ISO, ou uma nota curta ("2026-08-30, Thiago").
+   *
+   * Uma nota em markdown dizendo "ainda não validamos" é exatamente o modo de
+   * falha que este projeto já diagnosticou nas guardas que ninguém chama. Aqui
+   * o construtor recusa, e o primeiro envio real não acontece por acidente.
+   */
+  premissaValidadaEm: string;
+}
+
 export function criarProvedorInstantly(
-  config: { apiKey: string; campanhaInstantly: string; db: Db },
+  config: ConfigDoInstantly,
   deps: { fetch?: FetchLike } = {},
 ): ColdEmailProvider {
+  if (!config.premissaValidadaEm?.trim()) {
+    throw new Error(
+      "Provedor do Instantly recusado: a premissa das custom variables não foi " +
+        "validada. O produto inteiro depende de assunto e corpo por lead num " +
+        "template feito só de merge tags — padrão que não está na referência da " +
+        "API. Rode a Task 5, Step 1 do plano numa conta real e confira, na " +
+        "mensagem recebida: os três parágrafos mantiveram as quebras de linha, " +
+        "os acentos não viraram entidades HTML nem '?', nada foi truncado, e o " +
+        "assunto veio da variável em vez do literal {{assunto_email}}. Só então " +
+        "informe `premissaValidadaEm`.",
+    );
+  }
+
   const cabecalhos = {
     authorization: `Bearer ${config.apiKey}`,
     "content-type": "application/json",
