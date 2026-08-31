@@ -12,7 +12,13 @@ export async function carregarRegrasDeSupressao(
   return rows.map((r) => ({ kind: r.kind, value: r.value }));
 }
 
-/** Idempotente: a mesma regra pode ser adicionada quantas vezes for. */
+/**
+ * Idempotente: a mesma regra pode ser adicionada quantas vezes for.
+ *
+ * O conflito é declarado no índice exato — que aqui é total, sem predicado
+ * parcial a repetir. Um "on conflict do nothing" seco engoliria em silêncio a
+ * violação de qualquer índice que venha a ser criado nesta tabela.
+ */
 export async function adicionarSupressao(
   db: Db,
   tenantId: string,
@@ -22,7 +28,7 @@ export async function adicionarSupressao(
   await db.query(
     `insert into suppression_list (tenant_id, kind, value, reason)
      values ($1, $2, $3, $4)
-     on conflict do nothing`,
+     on conflict (tenant_id, kind, value) do nothing`,
     [tenantId, regra.kind, regra.value, motivo],
   );
 }

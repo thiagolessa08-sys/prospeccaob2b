@@ -35,6 +35,13 @@ const COLUNAS = `id, tenant_id, lead_id, direction, subject, body, intent,
  * linha voltou": lead de outro tenant precisa **lançar**, reentrega do mesmo
  * webhook precisa devolver `null`. Se o `exists` falhasse em silêncio, o
  * chamador responderia 2xx ao Instantly e a resposta do lead sumiria.
+ *
+ * Pelo mesmo motivo o conflito é declarado no índice exato: `null` aqui
+ * significa "webhook já processado", e o chamador confirma 2xx ao provedor.
+ * Um `on conflict do nothing` seco absorveria a violação de qualquer índice
+ * futuro com o mesmo `null` — descartando uma resposta de verdade enquanto diz
+ * ao Instantly que deu tudo certo. O `where external_id is not null` repete o
+ * predicado do índice parcial: sem ele o Postgres recusa a instrução.
  */
 export async function anexarMensagem(
   db: Db,
@@ -56,7 +63,8 @@ export async function anexarMensagem(
        (tenant_id, lead_id, direction, subject, body, intent, confidence,
         ai_reasoning, external_id)
      values ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-     on conflict do nothing
+     on conflict (tenant_id, external_id) where external_id is not null
+       do nothing
      returning ${COLUNAS}`,
     [
       input.tenantId,

@@ -26,6 +26,12 @@ const COLUNAS = `id, tenant_id, campaign_id, cnpj, legal_name, trade_name,
  * original e devolve menos linhas do que foram enviadas — a diferença é a
  * contagem de ignoradas. Fazer o dedup em SQL, e não em memória, é o que torna
  * a operação segura quando dois fluxos rodam ao mesmo tempo.
+ *
+ * O conflito é declarado no índice exato, e não `on conflict do nothing` seco:
+ * `ignoradas` é derivado por subtração e vira número que um humano lê como
+ * "duplicata de CNPJ". Um conflito de qualquer índice futuro seria absorvido
+ * em silêncio e reportado com esse mesmo nome. O `where cnpj is not null`
+ * repete o predicado do índice parcial — sem ele o Postgres recusa a instrução.
  */
 export async function salvarEmpresas(
   db: Db,
@@ -87,7 +93,7 @@ export async function salvarEmpresas(
        (tenant_id, campaign_id, cnpj, legal_name, trade_name, website,
         city, uf, employee_count, summary, source)
      values ${marcadores.join(", ")}
-     on conflict do nothing
+     on conflict (tenant_id, cnpj) where cnpj is not null do nothing
      returning id`,
     valores,
   );
