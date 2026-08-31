@@ -2,12 +2,17 @@ import type { LeadStage } from "../db/types.js";
 
 const TERMINAIS: readonly LeadStage[] = ["meeting_booked", "discarded"];
 
-/** Avanços permitidos no funil, sem contar descarte e erro. */
+/** Transições permitidas no funil, sem contar descarte e erro. */
 const AVANCOS: Record<LeadStage, readonly LeadStage[]> = {
   discovered: ["enriched"],
   enriched: ["contacted"],
   contacted: ["in_conversation"],
-  in_conversation: ["meeting_booked"],
+  // 'contacted' é o único retorno permitido no funil: qualquer resposta que
+  // chega move o lead para 'in_conversation' antes de ser classificada, e uma
+  // resposta automática de ausência ("estou de férias", "não trabalha mais
+  // aqui") é classificada como out_of_scope depois disso. Sem esta volta, um
+  // auto-respondedor deixaria o lead marcado como conversa ativa para sempre.
+  in_conversation: ["meeting_booked", "contacted"],
   meeting_booked: [],
   discarded: [],
   // Erro é reprocessável: volta para qualquer estágio ativo do funil.

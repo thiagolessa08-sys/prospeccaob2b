@@ -53,10 +53,17 @@ function instrucao(action: NextAction, schedulingLink: string): string {
       return `O lead tem interesse, mas não agora. Não insista e não envie link. Agradeça, deixe a porta aberta e diga que você retoma o contato em cerca de ${action.resumeInDays} dias.`;
     case "close_lost":
       return `O lead recusou. Não insista e não envie link: agradeça o retorno em duas frases, deixe a porta aberta para o futuro e encerre.`;
-    default:
+    case "handoff_to_human":
+    case "ignore":
       throw new Error(
         `A ação "${action.type}" não gera e-mail para o lead.`,
       );
+    // Sem este ramo, uma sétima variante de NextAction compilaria em silêncio e
+    // só falharia em produção, dentro do webhook, com um lead real esperando.
+    default: {
+      const _exaustivo: never = action;
+      throw new Error(`Ação não suportada: ${JSON.stringify(_exaustivo)}`);
+    }
   }
 }
 

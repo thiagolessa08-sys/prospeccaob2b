@@ -35,6 +35,10 @@ describe("canTransition", () => {
     expect(canTransition("meeting_booked", "in_conversation")).toBe(false);
   });
 
+  it("permite voltar de conversa para contatado quando a resposta era fora do escopo", () => {
+    expect(canTransition("in_conversation", "contacted")).toBe(true);
+  });
+
   it("proíbe sair de estágios terminais", () => {
     expect(canTransition("meeting_booked", "discarded")).toBe(false);
     expect(canTransition("discarded", "contacted")).toBe(false);
