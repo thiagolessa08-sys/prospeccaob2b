@@ -32,7 +32,11 @@ export async function subirBanco(): Promise<BancoDeTeste> {
   const pglite = new PGlite();
   await pglite.exec(readFileSync(CAMINHO_MIGRATION, "utf8"));
 
-  const db = pglite as unknown as Db;
+  // Anotação direta, sem cast: o PGlite satisfaz `Db` estruturalmente, e é
+  // justamente isso que o porte promete. Um `as unknown as Db` calaria o
+  // compilador no dia em que as duas assinaturas divergissem — que é a única
+  // coisa que este arranjo existe para detectar.
+  const db: Db = pglite;
 
   await db.query(`insert into tenants (id, name) values ($1, $2)`, [
     TENANT_ID,
