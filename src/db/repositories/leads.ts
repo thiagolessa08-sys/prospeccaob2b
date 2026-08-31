@@ -21,7 +21,7 @@ export interface ExtrasDaTransicao {
 
 const COLUNAS = `id, tenant_id, campaign_id, company_id, full_name, role_title,
   email, email_verified, stage, discard_reason, handoff_reason, exchange_count,
-  resume_at, needs_human, created_at, updated_at`;
+  resume_at, needs_human, bounced_at, created_at, updated_at`;
 
 /**
  * Cria o lead exigindo que a empresa seja do mesmo tenant.
@@ -169,4 +169,46 @@ export async function listarProntosParaContato(
     [tenantId, campaignId, limite],
   );
   return rows;
+}
+
+/**
+ * Busca pelo endereço, normalizando como o índice único faz.
+ *
+ * `leads_tenant_email_uniq` é `(tenant_id, lower(email))`, então a busca usa
+ * `lower(email)` para bater com ele — um webhook pode trazer o endereço com
+ * outra caixa daquela que gravamos.
+ */
+export async function buscarLeadPorEmail(
+  db: Db,
+  tenantId: string,
+  email: string,
+): Promise<Lead | null> {
+  const normalizado = email.trim().toLowerCase();
+  if (normalizado.length === 0) return null;
+
+  const { rows } = await db.query<Lead>(
+    `select ${COLUNAS} from leads
+     where tenant_id = $1 and lower(email) = $2`,
+    [tenantId, normalizado],
+  );
+  return rows[0] ?? null;
+}
+
+/**
+ * Marca que o endereço deu bounce.
+ *
+ * `coalesce` preserva a primeira data: o Instantly pode reentregar o evento, e
+ * o que interessa é quando o endereço falhou pela primeira vez. A contagem do
+ * disjuntor lê esta coluna — é ela que torna a proteção capaz de disparar.
+ */
+export async function marcarBounce(
+  db: Db,
+  tenantId: string,
+  leadId: string,
+): Promise<void> {
+  await db.query(
+    `update leads set bounced_at = coalesce(bounced_at, now())
+     where tenant_id = $1 and id = $2`,
+    [tenantId, leadId],
+  );
 }

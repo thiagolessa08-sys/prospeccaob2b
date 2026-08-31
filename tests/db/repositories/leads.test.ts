@@ -8,6 +8,8 @@ import { salvarEmpresas } from "../../../src/db/repositories/companies.js";
 import {
   criarLead,
   buscarLead,
+  buscarLeadPorEmail,
+  marcarBounce,
   transicionarLead,
   incrementarTrocas,
   listarProntosParaContato,
@@ -234,5 +236,89 @@ describe("listarProntosParaContato", () => {
       1,
     );
     expect(prontos).toHaveLength(1);
+  });
+});
+
+describe("buscarLeadPorEmail", () => {
+  it("acha o lead pelo endereço exato", async () => {
+    const lead = await criarLead(banco.db, novoLead({ email: "busca@exemplo.com" }));
+    const achado = await buscarLeadPorEmail(
+      banco.db,
+      banco.tenantId,
+      "busca@exemplo.com",
+    );
+    expect(achado?.id).toBe(lead.id);
+  });
+
+  it("ignora maiúsculas e espaços, como o índice único faz", async () => {
+    const lead = await criarLead(banco.db, novoLead({ email: "Caixa@Exemplo.com" }));
+    const achado = await buscarLeadPorEmail(
+      banco.db,
+      banco.tenantId,
+      "  caixa@exemplo.com ",
+    );
+    expect(achado?.id).toBe(lead.id);
+  });
+
+  it("devolve null quando não existe", async () => {
+    const achado = await buscarLeadPorEmail(
+      banco.db,
+      banco.tenantId,
+      "ninguem@exemplo.com",
+    );
+    expect(achado).toBeNull();
+  });
+
+  it("não devolve lead de outro tenant", async () => {
+    const lead = await criarLead(banco.db, novoLead({ email: "outro@exemplo.com" }));
+    const outroTenant = "55555555-5555-5555-5555-555555555555";
+    await banco.db.query(`insert into tenants (id, name) values ($1, 'Vizinho')`, [
+      outroTenant,
+    ]);
+    const achado = await buscarLeadPorEmail(
+      banco.db,
+      outroTenant,
+      "outro@exemplo.com",
+    );
+    expect(achado).toBeNull();
+    expect(lead.id).toBeDefined();
+  });
+
+  it("devolve null para e-mail vazio, sem consultar", async () => {
+    expect(await buscarLeadPorEmail(banco.db, banco.tenantId, "  ")).toBeNull();
+  });
+});
+
+describe("marcarBounce", () => {
+  it("grava a data do bounce", async () => {
+    const lead = await criarLead(banco.db, novoLead({ email: "bounce1@exemplo.com" }));
+    await marcarBounce(banco.db, banco.tenantId, lead.id);
+
+    const relido = await buscarLead(banco.db, banco.tenantId, lead.id);
+    expect(relido?.bounced_at).toBeInstanceOf(Date);
+  });
+
+  it("preserva a data do primeiro bounce numa segunda marcação", async () => {
+    const lead = await criarLead(banco.db, novoLead({ email: "bounce2@exemplo.com" }));
+    await marcarBounce(banco.db, banco.tenantId, lead.id);
+    const primeiro = await buscarLead(banco.db, banco.tenantId, lead.id);
+
+    await new Promise((r) => setTimeout(r, 20));
+    await marcarBounce(banco.db, banco.tenantId, lead.id);
+    const segundo = await buscarLead(banco.db, banco.tenantId, lead.id);
+
+    expect(segundo!.bounced_at!.getTime()).toBe(primeiro!.bounced_at!.getTime());
+  });
+
+  it("não afeta lead de outro tenant", async () => {
+    const lead = await criarLead(banco.db, novoLead({ email: "bounce3@exemplo.com" }));
+    const outroTenant = "66666666-6666-6666-6666-666666666666";
+    await banco.db.query(`insert into tenants (id, name) values ($1, 'Vizinho 2')`, [
+      outroTenant,
+    ]);
+    await marcarBounce(banco.db, outroTenant, lead.id);
+
+    const relido = await buscarLead(banco.db, banco.tenantId, lead.id);
+    expect(relido?.bounced_at).toBeNull();
   });
 });
