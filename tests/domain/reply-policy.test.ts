@@ -173,4 +173,43 @@ describe("decideNextAction — travas de segurança", () => {
       reason: "classificação com confiança baixa",
     });
   });
+
+  it("passa para humano quando a recusa vem com confiança baixa", () => {
+    const acao = decideNextAction({
+      classification: classificacao({
+        intent: "no",
+        confidence: CONFIDENCE_THRESHOLD - 0.01,
+      }),
+      exchangeCount: 1,
+    });
+    expect(acao).toEqual({
+      type: "handoff_to_human",
+      reason: "classificação com confiança baixa",
+    });
+  });
+
+  it("passa para humano quando a resposta fora do escopo vem com confiança baixa", () => {
+    const acao = decideNextAction({
+      classification: classificacao({
+        intent: "out_of_scope",
+        confidence: CONFIDENCE_THRESHOLD - 0.01,
+      }),
+      exchangeCount: 1,
+    });
+    expect(acao).toEqual({
+      type: "handoff_to_human",
+      reason: "classificação com confiança baixa",
+    });
+  });
+
+  it("ignora resposta fora do escopo mesmo em conversa longa", () => {
+    const acao = decideNextAction({
+      classification: classificacao({ intent: "out_of_scope" }),
+      exchangeCount: MAX_EXCHANGES + 2,
+    });
+    expect(acao).toEqual({
+      type: "ignore",
+      reason: "resposta fora do escopo",
+    });
+  });
 });
