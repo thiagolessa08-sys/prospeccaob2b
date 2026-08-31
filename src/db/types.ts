@@ -32,6 +32,7 @@ export interface Campaign {
   sender_first_name: string;
   scheduling_link: string;
   daily_send_limit: number;
+  send_mode: "shadow" | "live";
   status: "active" | "paused" | "archived";
   created_at: Date;
 }
@@ -67,6 +68,7 @@ export interface Lead {
   exchange_count: number;
   resume_at: Date | null;
   needs_human: boolean;
+  bounced_at: Date | null;
   handoff_reason: string | null;
   created_at: Date;
   updated_at: Date;
@@ -90,6 +92,7 @@ export interface Message {
   confidence: string | null;
   ai_reasoning: string | null;
   external_id: string | null;
+  shadow: boolean;
   created_at: Date;
 }
 

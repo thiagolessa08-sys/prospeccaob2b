@@ -7,6 +7,8 @@ const validSource = {
   SUPABASE_SERVICE_ROLE_KEY: "chave-de-servico",
   DATABASE_URL: "postgresql://x",
   HUNTER_API_KEY: "chave",
+  INSTANTLY_API_KEY: "chave-instantly",
+  INSTANTLY_CAMPAIGN_ID: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
 };
 
 describe("loadEnv", () => {

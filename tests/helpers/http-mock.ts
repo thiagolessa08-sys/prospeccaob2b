@@ -17,6 +17,7 @@ export function respostaVazia(status: number): Response {
 export interface FetchFalso {
   (input: string | URL | Request, init?: RequestInit): Promise<Response>;
   chamadas: string[];
+  opcoes: (RequestInit | undefined)[];
 }
 
 /**
@@ -27,8 +28,10 @@ export interface FetchFalso {
 export function fetchFalso(respostas: readonly Response[]): FetchFalso {
   let i = 0;
   const chamadas: string[] = [];
-  const fn = vi.fn(async (input: string | URL | Request) => {
+  const opcoes: (RequestInit | undefined)[] = [];
+  const fn = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
     chamadas.push(String(input));
+    opcoes.push(init);
     const resposta = respostas[i++];
     if (!resposta) {
       throw new Error(
@@ -38,6 +41,7 @@ export function fetchFalso(respostas: readonly Response[]): FetchFalso {
     return resposta;
   }) as unknown as FetchFalso;
   fn.chamadas = chamadas;
+  fn.opcoes = opcoes;
   return fn;
 }
 

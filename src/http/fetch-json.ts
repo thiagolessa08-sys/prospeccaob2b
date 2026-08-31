@@ -17,6 +17,9 @@ export interface OpcoesHttp {
   tentativas?: number;
   /** Status extras que valem uma nova tentativa, além de 429 e 5xx. */
   statusParaRepetir?: readonly number[];
+  metodo?: string;
+  headers?: Record<string, string>;
+  corpo?: string;
 }
 
 const REPETIVEIS_PADRAO = [429];
@@ -37,6 +40,8 @@ const espera = (ms: number) => new Promise((r) => setTimeout(r, ms));
  * contrato ao vivo que descobriu.
  */
 const USER_AGENT = "prospeccao/0.1";
+
+const CABECALHOS_PADRAO = { accept: "application/json", "user-agent": USER_AGENT };
 
 /**
  * Remove segredos da URL antes de ela entrar numa mensagem de erro.
@@ -85,8 +90,10 @@ export async function fetchJson<T>(
     let resposta: Response;
     try {
       resposta = await fetchFn(url, {
+        method: opcoes.metodo ?? "GET",
+        headers: { ...CABECALHOS_PADRAO, ...(opcoes.headers ?? {}) },
+        body: opcoes.corpo,
         signal: controlador.signal,
-        headers: { accept: "application/json", "user-agent": USER_AGENT },
       });
     } catch (erro) {
       // Um timeout falha de imediato: se o servidor não respondeu em 15 s,
