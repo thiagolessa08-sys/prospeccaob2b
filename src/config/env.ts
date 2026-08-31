@@ -8,6 +8,9 @@ const EnvSchema = z.object({
   HUNTER_API_KEY: z.string().min(1),
   INSTANTLY_API_KEY: z.string().min(1),
   INSTANTLY_CAMPAIGN_ID: z.string().min(1),
+  TENANT_ID: z.string().min(1),
+  INSTANTLY_WEBHOOK_SECRET: z.string().min(1),
+  CALCOM_WEBHOOK_SECRET: z.string().min(1),
 });
 
 export type Env = z.infer<typeof EnvSchema>;

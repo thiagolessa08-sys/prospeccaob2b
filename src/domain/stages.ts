@@ -6,7 +6,11 @@ const TERMINAIS: readonly LeadStage[] = ["meeting_booked", "discarded"];
 const AVANCOS: Record<LeadStage, readonly LeadStage[]> = {
   discovered: ["enriched"],
   enriched: ["contacted"],
-  contacted: ["in_conversation"],
+  // `meeting_booked` sai daqui também: o link de agendamento só é enviado numa
+  // réplica, mas ele pode ser encaminhado, e o lead pode agendar sem responder.
+  // Recusar essa transição faria o webhook falhar justamente no desfecho que o
+  // sistema existe para produzir.
+  contacted: ["in_conversation", "meeting_booked"],
   // 'contacted' é o único retorno permitido no funil: qualquer resposta que
   // chega move o lead para 'in_conversation' antes de ser classificada, e uma
   // resposta automática de ausência ("estou de férias", "não trabalha mais

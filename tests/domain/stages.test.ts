@@ -25,6 +25,10 @@ describe("canTransition", () => {
     expect(canTransition("in_conversation", "error")).toBe(true);
   });
 
+  it("permite agendar direto de contatado, sem resposta antes", () => {
+    expect(canTransition("contacted", "meeting_booked")).toBe(true);
+  });
+
   it("proíbe pular etapas do funil", () => {
     expect(canTransition("discovered", "contacted")).toBe(false);
     expect(canTransition("enriched", "meeting_booked")).toBe(false);
