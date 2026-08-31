@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { parseNiche } from "../../src/ai/niche-parser.js";
-import type { AiDeps } from "../../src/ai/client.js";
+import { depsComParse } from "../helpers/ai-mock.js";
 
 const FILTROS = {
   cnaes: ["1091101"],
@@ -11,10 +11,6 @@ const FILTROS = {
   target_roles: ["Gerente de TI"],
   keywords: ["indústria de alimentos"],
 };
-
-function depsComParse(parse: ReturnType<typeof vi.fn>): AiDeps {
-  return { client: { messages: { parse } } } as unknown as AiDeps;
-}
 
 describe("parseNiche", () => {
   it("devolve os filtros estruturados retornados pelo modelo", async () => {

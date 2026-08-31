@@ -52,7 +52,7 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.122.0",
     "@supabase/supabase-js": "^2.45.0",
-    "zod": "^3.25.0"
+    "zod": "^4.0.0"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
@@ -845,6 +845,7 @@ git commit -m "feat: normalização de e-mail e regras de supressão"
 **Files:**
 - Create: `src/ai/client.ts`
 - Create: `src/ai/niche-parser.ts`
+- Create: `tests/helpers/ai-mock.ts`
 - Test: `tests/ai/niche-parser.test.ts`
 
 **Interfaces:**
@@ -855,6 +856,7 @@ git commit -m "feat: normalização de e-mail e regras de supressão"
   - `type AiDeps = { client: Pick<Anthropic, "messages"> }`
   - `NicheFiltersSchema` (Zod) e `type NicheFilters = { cnaes: string[]; ufs: string[]; cities: string[]; min_employees: number | null; max_employees: number | null; target_roles: string[]; keywords: string[] }`
   - `parseNiche(description: string, deps?: AiDeps): Promise<NicheFilters>`
+  - Helper compartilhado de teste `tests/helpers/ai-mock.ts`: `depsComParse(parse: Mock): AiDeps`, `parseRetornando(parsedOutput: unknown): Mock`, `parseSemSaida(): Mock`. **As Tasks 6, 7 e 9 importam este helper em vez de redefinir o mock localmente.**
 
 - [ ] **Step 1: Implementar `src/ai/client.ts`**
 
@@ -880,14 +882,52 @@ export interface AiDeps {
 }
 ```
 
-- [ ] **Step 2: Escrever o teste que falha**
+- [ ] **Step 2: Criar o helper de mock compartilhado**
+
+Criar `tests/helpers/ai-mock.ts`. Este arquivo é a única fonte de mocks do
+cliente Anthropic no projeto — as Tasks 6, 7 e 9 importam daqui em vez de
+redefinir o mock localmente.
+
+```typescript
+import { vi, type Mock } from "vitest";
+import type { AiDeps } from "../../src/ai/client.js";
+
+/**
+ * Monta um `AiDeps` cujo `messages.parse` é um mock do vitest.
+ *
+ * O cast inseguro mora aqui de propósito. `AiDeps.client` é
+ * `Pick<Anthropic, "messages">` para que o código de produção infira o tipo
+ * de `parsed_output`, e nenhum mock consegue satisfazer aquela superfície
+ * inteira. Concentrando a construção num único lugar, o cast existe uma vez
+ * só em vez de se repetir em cada módulo de IA.
+ */
+export function depsComParse(parse: Mock): AiDeps {
+  return { client: { messages: { parse } } } as unknown as AiDeps;
+}
+
+/** `parse` que devolve uma saída estruturada bem-sucedida. */
+export function parseRetornando(parsedOutput: unknown): Mock {
+  return vi
+    .fn()
+    .mockResolvedValue({ parsed_output: parsedOutput, stop_reason: "end_turn" });
+}
+
+/** `parse` que devolve recusa, sem saída estruturada. */
+export function parseSemSaida(): Mock {
+  return vi
+    .fn()
+    .mockResolvedValue({ parsed_output: null, stop_reason: "refusal" });
+}
+```
+
+- [ ] **Step 2b: Escrever o teste que falha**
 
 Criar `tests/ai/niche-parser.test.ts`:
 
 ```typescript
 import { describe, it, expect, vi } from "vitest";
 import { parseNiche } from "../../src/ai/niche-parser.js";
-import type { AiDeps } from "../../src/ai/client.js";
+import { depsComParse } from "../helpers/ai-mock.js";
 
 const FILTROS = {
   cnaes: ["1091101"],
@@ -898,10 +938,6 @@ const FILTROS = {
   target_roles: ["Gerente de TI"],
   keywords: ["indústria de alimentos"],
 };
-
-function depsComParse(parse: ReturnType<typeof vi.fn>): AiDeps {
-  return { client: { messages: { parse } } } as unknown as AiDeps;
-}
 
 describe("parseNiche", () => {
   it("devolve os filtros estruturados retornados pelo modelo", async () => {
@@ -1079,16 +1115,12 @@ Criar `tests/ai/email-writer.test.ts`:
 ```typescript
 import { describe, it, expect, vi } from "vitest";
 import { writeFirstEmail } from "../../src/ai/email-writer.js";
-import type { AiDeps } from "../../src/ai/client.js";
+import { depsComParse } from "../helpers/ai-mock.js";
 
 const RASCUNHO = {
   subject: "Integração de dados na Alfa Alimentos",
   body: "Olá Maria, ...",
 };
-
-function depsComParse(parse: ReturnType<typeof vi.fn>): AiDeps {
-  return { client: { messages: { parse } } } as unknown as AiDeps;
-}
 
 const ENTRADA = {
   voice: {
@@ -1327,11 +1359,7 @@ Criar `tests/ai/reply-classifier.test.ts`:
 ```typescript
 import { describe, it, expect, vi } from "vitest";
 import { classifyReply } from "../../src/ai/reply-classifier.js";
-import type { AiDeps } from "../../src/ai/client.js";
-
-function depsComParse(parse: ReturnType<typeof vi.fn>): AiDeps {
-  return { client: { messages: { parse } } } as unknown as AiDeps;
-}
+import { depsComParse } from "../helpers/ai-mock.js";
 
 function classificacao(overrides: Record<string, unknown> = {}) {
   return {
@@ -1831,13 +1859,9 @@ Criar `tests/ai/reply-writer.test.ts`:
 ```typescript
 import { describe, it, expect, vi } from "vitest";
 import { writeReply, type ConversationTurn } from "../../src/ai/reply-writer.js";
-import type { AiDeps } from "../../src/ai/client.js";
+import { depsComParse } from "../helpers/ai-mock.js";
 
 const RASCUNHO = { subject: "Re: proposta", body: "Claro, segue o link..." };
-
-function depsComParse(parse: ReturnType<typeof vi.fn>): AiDeps {
-  return { client: { messages: { parse } } } as unknown as AiDeps;
-}
 
 const VOZ = {
   offerDescription: "Consultoria de dados e BI para indústrias.",
