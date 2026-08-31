@@ -1,4 +1,4 @@
-import { vi, type Mock } from "vitest";
+import type { Mock } from "vitest";
 import type { AiDeps } from "../../src/ai/client.js";
 
 /**
@@ -12,18 +12,4 @@ import type { AiDeps } from "../../src/ai/client.js";
  */
 export function depsComParse(parse: Mock): AiDeps {
   return { client: { messages: { parse } } } as unknown as AiDeps;
-}
-
-/** `parse` que devolve uma saída estruturada bem-sucedida. */
-export function parseRetornando(parsedOutput: unknown): Mock {
-  return vi
-    .fn()
-    .mockResolvedValue({ parsed_output: parsedOutput, stop_reason: "end_turn" });
-}
-
-/** `parse` que devolve recusa, sem saída estruturada. */
-export function parseSemSaida(): Mock {
-  return vi
-    .fn()
-    .mockResolvedValue({ parsed_output: null, stop_reason: "refusal" });
 }

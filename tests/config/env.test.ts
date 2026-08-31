@@ -17,6 +17,12 @@ describe("loadEnv", () => {
     expect(() => loadEnv(semUrl)).toThrow(/SUPABASE_URL/);
   });
 
+  it("lança erro quando SUPABASE_URL não é uma URL", () => {
+    expect(() =>
+      loadEnv({ ...validSource, SUPABASE_URL: "abc.supabase.co" }),
+    ).toThrow(/SUPABASE_URL/);
+  });
+
   it("lança erro quando uma variável está vazia", () => {
     expect(() => loadEnv({ ...validSource, ANTHROPIC_API_KEY: "" })).toThrow(
       /ANTHROPIC_API_KEY/,
