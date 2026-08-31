@@ -2507,7 +2507,7 @@ export async function buscarEmpresaPorCnpj(
 - [ ] **Step 5: Rodar o teste e confirmar que passa**
 
 Run: `npm test -- tests/enrichment/brasilapi.test.ts`
-Esperado: PASS (11 testes).
+Esperado: PASS (10 testes).
 
 - [ ] **Step 6: Commit**
 
@@ -3415,16 +3415,26 @@ async function verificarComTolerancia(
   if (!candidato.email) return null;
 
   let status: StatusVerificacao;
-  try {
-    const r = await deps.verificar({ email: candidato.email, apiKey });
-    status = r.status;
-  } catch (erro) {
-    tentativas.push({
-      fonte: candidato.fonte,
-      resultado: "erro",
-      detalhe: erro instanceof Error ? erro.message : String(erro),
-    });
-    return null;
+  if (candidato.verificacao !== "unknown") {
+    // A própria Hunter já embute uma verificação na resposta do finder e do
+    // domain-search. Chamar o /email-verifier de novo gastaria um segundo
+    // crédito só para confirmar o que a fonte já respondeu — e sobrescreveria
+    // um "invalid" que a fonte tinha acabado de dar. Só o e-mail da Receita
+    // chega aqui como "unknown", sem verificação própria, e precisa mesmo da
+    // chamada paga.
+    status = candidato.verificacao;
+  } else {
+    try {
+      const r = await deps.verificar({ email: candidato.email, apiKey });
+      status = r.status;
+    } catch (erro) {
+      tentativas.push({
+        fonte: candidato.fonte,
+        resultado: "erro",
+        detalhe: erro instanceof Error ? erro.message : String(erro),
+      });
+      return null;
+    }
   }
 
   if (!verificacaoAprova(status)) {
