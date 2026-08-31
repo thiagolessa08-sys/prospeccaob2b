@@ -63,7 +63,13 @@ export function criarProvedorInstantly(
           metodo: "POST",
           headers: cabecalhos,
           corpo: JSON.stringify(corpo),
-          tentativas: 3,
+          // Uma tentativa só, de propósito. Criar lead não é idempotente e o
+          // Instantly não documenta chave de idempotência: um POST que ele
+          // processou mas respondeu com 502 seria repetido, plausivelmente
+          // cadastrando o lead duas vezes e mandando o mesmo e-mail duas vezes
+          // para o prospect. É o mesmo dano que já barramos na gravação, só que
+          // chegando pelo caminho do retry.
+          tentativas: 1,
         });
         externalId = resposta.id ?? null;
       } catch (erro) {
@@ -82,7 +88,7 @@ export function criarProvedorInstantly(
       // inconsistência para conciliação e relatamos sucesso — porque foi o que
       // de fato aconteceu.
       try {
-        await anexarMensagem(config.db, {
+        const gravada = await anexarMensagem(config.db, {
           tenantId: email.tenantId,
           leadId: email.leadId,
           direction: "outbound",
@@ -91,6 +97,20 @@ export function criarProvedorInstantly(
           externalId: externalId ?? undefined,
           shadow: false,
         });
+
+        // `null` significa conflito de `external_id`: já existe linha para
+        // este envio, ou seja, esta pessoa já recebeu. Ignorar o retorno
+        // deixava o `enviados` do disjuntor subcontado e a duplicata sem
+        // rastro. Relatamos sucesso mesmo assim — o e-mail saiu em algum
+        // momento, e relatar falha faria o lote reenviar.
+        if (!gravada) {
+          await registrarEvento(config.db, {
+            tenantId: email.tenantId,
+            leadId: email.leadId,
+            kind: "envio_duplicado_ignorado",
+            payload: { externalId, assunto: email.assunto },
+          });
+        }
       } catch (erro) {
         await registrarEvento(config.db, {
           tenantId: email.tenantId,

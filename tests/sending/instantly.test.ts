@@ -179,6 +179,45 @@ describe("criarProvedorInstantly — enviar", () => {
     expect(rows[0]?.payload.assunto).toBe("Saiu mas não gravou");
   });
 
+  it("não repete o POST de criação, que não é idempotente", async () => {
+    // Duas respostas previstas; se o adaptador tentasse de novo, a segunda
+    // seria consumida e o teste veria duas chamadas.
+    const fake = fetchFalso([respostaVazia(502), respostaVazia(502)]);
+    const resultado = await provedor(fake).enviar(email());
+
+    expect(fake.chamadas).toHaveLength(1);
+    expect(resultado.enviado).toBe(false);
+  });
+
+  it("registra a duplicata quando o external_id já existe, e ainda relata sucesso", async () => {
+    const primeira = fetchFalso([respostaJson({ id: "lead_repetido" })]);
+    await provedor(primeira).enviar(email({ assunto: "Primeira vez" }));
+
+    const segunda = fetchFalso([respostaJson({ id: "lead_repetido" })]);
+    const resultado = await provedor(segunda).enviar(
+      email({ assunto: "Segunda vez" }),
+    );
+
+    // O e-mail saiu em algum momento: relatar falha faria o lote reenviar.
+    expect(resultado).toEqual({
+      enviado: true,
+      externalId: "lead_repetido",
+      sombra: false,
+    });
+
+    const conversa = await carregarConversa(banco.db, banco.tenantId, leadId);
+    expect(conversa.filter((m) => m.external_id === "lead_repetido")).toHaveLength(1);
+    expect(conversa.find((m) => m.subject === "Segunda vez")).toBeUndefined();
+
+    const { rows } = await banco.db.query<{ payload: { externalId: string } }>(
+      `select payload from events
+       where tenant_id = $1 and kind = 'envio_duplicado_ignorado'
+       order by created_at desc limit 1`,
+      [banco.tenantId],
+    );
+    expect(rows[0]?.payload.externalId).toBe("lead_repetido");
+  });
+
   it("omite campos nulos em vez de mandar null", async () => {
     const fake = fetchFalso([respostaJson({ id: "lead_127" })]);
     await provedor(fake).enviar(
