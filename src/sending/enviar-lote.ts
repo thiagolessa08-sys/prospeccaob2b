@@ -108,78 +108,101 @@ export async function enviarLote(
   let falhas = 0;
 
   for (const lead of prontos) {
-    // A supressão é conferida antes de escrever o e-mail: gastar uma chamada de
-    // IA para alguém que nunca vai receber é desperdício, e a checagem é grátis.
-    if (isSuppressed(lead.email, regras)) {
-      await transicionarLead(db, tenantId, lead.id, "discarded", {
-        discardReason: "endereço suprimido",
-      });
-      await registrarEvento(db, {
-        tenantId,
-        leadId: lead.id,
-        kind: "envio_bloqueado_por_supressao",
-        payload: { email: lead.email },
-      });
-      suprimidos += 1;
-      continue;
-    }
-
-    const empresa = await buscarEmpresaDoLead(db, tenantId, lead.company_id);
-
-    let rascunho: { subject: string; body: string };
+    // Todo o corpo do laço é protegido. `transicionarLead` estoura por
+    // desenho quando outro fluxo move o lead no mesmo instante — corrida real
+    // sob `pg.Pool` e invisível sob o PGlite de uma conexão só —, e a
+    // transição do fim roda DEPOIS de `provedor.enviar()` já ter colocado um
+    // e-mail na frente do prospect. Deixar a exceção escapar abortaria o lote,
+    // deixaria os leads seguintes sem contato e devolveria uma promessa
+    // rejeitada a quem chamou, perdendo a conta do que já saiu.
     try {
-      rascunho = await deps.escreverEmail({
-        voice: {
-          offerDescription: campanha.offer_description,
-          tone: campanha.tone,
-          senderFirstName: campanha.sender_first_name,
-        },
-        company: {
-          legalName: empresa?.legal_name ?? "",
-          tradeName: empresa?.trade_name ?? null,
-          summary: empresa?.summary ?? null,
-          city: empresa?.city ?? null,
-          uf: empresa?.uf ?? null,
-        },
-        lead: { fullName: lead.full_name, roleTitle: lead.role_title },
+      // A supressão é conferida antes de escrever o e-mail: gastar uma chamada de
+      // IA para alguém que nunca vai receber é desperdício, e a checagem é grátis.
+      if (isSuppressed(lead.email, regras)) {
+        await transicionarLead(db, tenantId, lead.id, "discarded", {
+          discardReason: "endereço suprimido",
+        });
+        await registrarEvento(db, {
+          tenantId,
+          leadId: lead.id,
+          kind: "envio_bloqueado_por_supressao",
+          payload: { email: lead.email },
+        });
+        suprimidos += 1;
+        continue;
+      }
+
+      const empresa = await buscarEmpresaDoLead(db, tenantId, lead.company_id);
+
+      let rascunho: { subject: string; body: string };
+      try {
+        rascunho = await deps.escreverEmail({
+          voice: {
+            offerDescription: campanha.offer_description,
+            tone: campanha.tone,
+            senderFirstName: campanha.sender_first_name,
+          },
+          company: {
+            legalName: empresa?.legal_name ?? "",
+            tradeName: empresa?.trade_name ?? null,
+            summary: empresa?.summary ?? null,
+            city: empresa?.city ?? null,
+            uf: empresa?.uf ?? null,
+          },
+          lead: { fullName: lead.full_name, roleTitle: lead.role_title },
+        });
+      } catch (erro) {
+        await registrarEvento(db, {
+          tenantId,
+          leadId: lead.id,
+          kind: "falha_ao_escrever_email",
+          payload: { erro: erro instanceof Error ? erro.message : String(erro) },
+        });
+        falhas += 1;
+        continue;
+      }
+
+      const [primeiroNome, ...resto] = (lead.full_name ?? "").trim().split(/\s+/);
+      const resultado = await provedor.enviar({
+        tenantId,
+        leadId: lead.id,
+        email: lead.email,
+        primeiroNome: primeiroNome || null,
+        sobrenome: resto.length ? resto[resto.length - 1]! : null,
+        empresa: empresa?.trade_name ?? empresa?.legal_name ?? null,
+        site: empresa?.website ?? null,
+        assunto: rascunho.subject,
+        corpo: rascunho.body,
       });
+
+      if (!resultado.enviado) {
+        await registrarEvento(db, {
+          tenantId,
+          leadId: lead.id,
+          kind: "falha_no_envio",
+          payload: { motivo: resultado.motivo },
+        });
+        falhas += 1;
+        continue;
+      }
+
+      await transicionarLead(db, tenantId, lead.id, "contacted");
+      enviados += 1;
     } catch (erro) {
+      falhas += 1;
       await registrarEvento(db, {
         tenantId,
         leadId: lead.id,
-        kind: "falha_ao_escrever_email",
-        payload: { erro: erro instanceof Error ? erro.message : String(erro) },
+        kind: "falha_no_lote",
+        payload: {
+          leadId: lead.id,
+          erro: erro instanceof Error ? erro.message : String(erro),
+        },
+      }).catch(() => {
+        // Se nem o evento grava, o banco está fora e não há mais o que fazer
+        // daqui. O lote segue para os leads que ainda derem para processar.
       });
-      falhas += 1;
-      continue;
     }
-
-    const [primeiroNome, ...resto] = (lead.full_name ?? "").trim().split(/\s+/);
-    const resultado = await provedor.enviar({
-      tenantId,
-      leadId: lead.id,
-      email: lead.email,
-      primeiroNome: primeiroNome || null,
-      sobrenome: resto.length ? resto[resto.length - 1]! : null,
-      empresa: empresa?.trade_name ?? empresa?.legal_name ?? null,
-      site: empresa?.website ?? null,
-      assunto: rascunho.subject,
-      corpo: rascunho.body,
-    });
-
-    if (!resultado.enviado) {
-      await registrarEvento(db, {
-        tenantId,
-        leadId: lead.id,
-        kind: "falha_no_envio",
-        payload: { motivo: resultado.motivo },
-      });
-      falhas += 1;
-      continue;
-    }
-
-    await transicionarLead(db, tenantId, lead.id, "contacted");
-    enviados += 1;
   }
 
   return {

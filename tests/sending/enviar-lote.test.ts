@@ -254,6 +254,73 @@ describe("enviarLote — recusas", () => {
   });
 });
 
+describe("enviarLote — isolamento de falha por lead", () => {
+  it("um lead cuja transição estoura não impede o envio do seguinte", async () => {
+    const { campanha, leads } = await cenario(2);
+    const provedor = provedorFalso();
+
+    // A corrida real: outro fluxo move o lead entre a leitura e o UPDATE, e o
+    // compare-and-swap de `transicionarLead` não acha linha nenhuma. Aqui isso
+    // é simulado derrubando só o UPDATE do primeiro lead.
+    const primeiro = leads[0]!.id;
+    const dbComCorrida = {
+      query: async (texto: string, params?: readonly unknown[]) => {
+        if (/update leads set/i.test(texto) && params?.[1] === primeiro) {
+          throw new Error("outro fluxo moveu o lead antes");
+        }
+        return banco.db.query(texto, params);
+      },
+    } as typeof banco.db;
+
+    const resultado = await enviarLote(
+      { db: dbComCorrida, tenantId: banco.tenantId, campaignId: campanha.id, provedor },
+      { escreverEmail: escreverEmailFalso as never },
+    );
+
+    // O lote terminou em vez de rejeitar a promessa, e o segundo lead saiu.
+    expect(resultado.falhas).toBe(1);
+    expect(resultado.enviados).toBe(1);
+    expect(provedor.enviados).toHaveLength(2); // os dois e-mails saíram
+    expect(await buscarLead(banco.db, banco.tenantId, leads[1]!.id)).toMatchObject({
+      stage: "contacted",
+    });
+
+    const { rows } = await banco.db.query<{ payload: { leadId: string } }>(
+      `select payload from events
+       where tenant_id = $1 and kind = 'falha_no_lote'
+         and payload->>'leadId' = $2`,
+      [banco.tenantId, primeiro],
+    );
+    expect(rows).toHaveLength(1);
+  });
+
+  it("termina o lote mesmo quando nem o evento de falha grava", async () => {
+    const { campanha, leads } = await cenario(2);
+    const provedor = provedorFalso();
+    const primeiro = leads[0]!.id;
+
+    const dbTotalmenteFora = {
+      query: async (texto: string, params?: readonly unknown[]) => {
+        if (/update leads set/i.test(texto) && params?.[1] === primeiro) {
+          throw new Error("banco indisponível");
+        }
+        if (/insert into events/i.test(texto)) {
+          throw new Error("banco indisponível");
+        }
+        return banco.db.query(texto, params);
+      },
+    } as typeof banco.db;
+
+    const resultado = await enviarLote(
+      { db: dbTotalmenteFora, tenantId: banco.tenantId, campaignId: campanha.id, provedor },
+      { escreverEmail: escreverEmailFalso as never },
+    );
+
+    expect(resultado.falhas).toBe(1);
+    expect(resultado.enviados).toBe(1);
+  });
+});
+
 describe("enviarLote — disjuntor", () => {
   it("pausa a campanha e não envia quando o bounce local passa do limite", async () => {
     const { campanha, leads } = await cenario(21, 50);
