@@ -99,3 +99,65 @@ describe("fetchJson", () => {
     ).rejects.toThrow(/JSON/i);
   });
 });
+
+/**
+ * A Hunter autentica por query param. Qualquer mensagem de erro que carregue a
+ * URL crua acaba gravada em `events` e nos logs — com a chave em texto claro.
+ */
+describe("fetchJson — segredo na URL nunca vaza para a mensagem de erro", () => {
+  const SEGREDO = "chave-super-secreta-123";
+  const URL_COM_CHAVE = `https://api.hunter.io/v2/email-finder?domain=alfa.com.br&api_key=${SEGREDO}`;
+
+  it("mascara a chave no HttpError", async () => {
+    const fake = fetchFalso([respostaJson({ errors: ["sem crédito"] }, 402)]);
+    const erro = await fetchJson(URL_COM_CHAVE, { fetch: fake }).catch((e) => e);
+
+    expect(erro).toBeInstanceOf(HttpError);
+    expect((erro as Error).message).not.toContain(SEGREDO);
+    expect((erro as Error).message).toContain("api_key=***");
+    // O resto da URL continua legível: mascarar não pode cegar o diagnóstico.
+    expect((erro as Error).message).toContain("domain=alfa.com.br");
+  });
+
+  it("mascara a chave no erro de tempo esgotado", async () => {
+    const erro = await fetchJson(URL_COM_CHAVE, {
+      fetch: fetchQueTrava(),
+      timeoutMs: 20,
+      tentativas: 1,
+    }).catch((e) => e);
+
+    expect((erro as Error).message).toMatch(/tempo/i);
+    expect((erro as Error).message).not.toContain(SEGREDO);
+    expect((erro as Error).message).toContain("api_key=***");
+  });
+
+  it("mascara a chave no erro de resposta não-JSON", async () => {
+    const fake = fetchFalso([new Response("<html>ops</html>", { status: 200 })]);
+    const erro = await fetchJson(URL_COM_CHAVE, { fetch: fake }).catch((e) => e);
+
+    expect((erro as Error).message).toMatch(/JSON/i);
+    expect((erro as Error).message).not.toContain(SEGREDO);
+    expect((erro as Error).message).toContain("api_key=***");
+  });
+
+  it("mascara também token, secret e password", async () => {
+    const fake = fetchFalso([respostaVazia(400)]);
+    const erro = await fetchJson(
+      "https://exemplo.com/a?token=tok_1&secret=sec_2&password=pwd_3&apikey=ak_4",
+      { fetch: fake },
+    ).catch((e) => e);
+
+    const msg = (erro as Error).message;
+    for (const valor of ["tok_1", "sec_2", "pwd_3", "ak_4"]) {
+      expect(msg).not.toContain(valor);
+    }
+  });
+
+  it("preserva a URL quando ela não é analisável", async () => {
+    const fake = fetchFalso([respostaVazia(400)]);
+    const erro = await fetchJson("nem-url-de-verdade", { fetch: fake }).catch(
+      (e) => e,
+    );
+    expect((erro as Error).message).toContain("nem-url-de-verdade");
+  });
+});

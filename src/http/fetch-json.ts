@@ -28,6 +28,27 @@ function valeRepetir(status: number, extras: readonly number[]): boolean {
 const espera = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /**
+ * Remove segredos da URL antes de ela entrar numa mensagem de erro.
+ *
+ * A Hunter autentica por query param, então a URL crua carrega a chave. Sem
+ * isso, qualquer falha dela gravaria a chave em texto claro na tabela de
+ * auditoria e em todo log.
+ */
+function urlSegura(url: string): string {
+  try {
+    const u = new URL(url);
+    for (const chave of u.searchParams.keys()) {
+      if (/api_?key|token|secret|password/i.test(chave)) {
+        u.searchParams.set(chave, "***");
+      }
+    }
+    return u.toString();
+  } catch {
+    return url;
+  }
+}
+
+/**
  * GET de JSON com timeout, retry e erro tipado.
  *
  * Repete apenas o que melhora com insistência: 429, 5xx e os status extras que
@@ -57,7 +78,7 @@ export async function fetchJson<T>(
       // Um timeout falha de imediato: se o servidor não respondeu em 15 s,
       // insistir no mesmo instante raramente ajuda e atrasa o lote inteiro.
       if (erro instanceof DOMException && erro.name === "AbortError") {
-        throw new Error(`Tempo esgotado (${timeoutMs} ms) em ${url}`);
+        throw new Error(`Tempo esgotado (${timeoutMs} ms) em ${urlSegura(url)}`);
       }
       throw erro;
     } finally {
@@ -70,12 +91,12 @@ export async function fetchJson<T>(
         return JSON.parse(texto) as T;
       } catch {
         throw new Error(
-          `Resposta de ${url} não é JSON válido: ${texto.slice(0, 200)}`,
+          `Resposta de ${urlSegura(url)} não é JSON válido: ${texto.slice(0, 200)}`,
         );
       }
     }
 
-    const erro = new HttpError(resposta.status, await resposta.text(), url);
+    const erro = new HttpError(resposta.status, await resposta.text(), urlSegura(url));
     if (!valeRepetir(resposta.status, statusParaRepetir) || ultimaTentativa) {
       throw erro;
     }
@@ -83,5 +104,5 @@ export async function fetchJson<T>(
   }
 
   // Inalcançável: o laço sempre retorna ou lança. Presente para o compilador.
-  throw new Error(`Falha ao chamar ${url}`);
+  throw new Error(`Falha ao chamar ${urlSegura(url)}`);
 }
