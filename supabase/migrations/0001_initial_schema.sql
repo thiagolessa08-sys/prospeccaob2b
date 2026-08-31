@@ -26,6 +26,8 @@ create table campaigns (
   sender_first_name text not null,
   scheduling_link text not null,
   daily_send_limit int not null default 20,
+  send_mode text not null default 'shadow'
+    check (send_mode in ('shadow', 'live')),
   status text not null default 'active'
     check (status in ('active', 'paused', 'archived')),
   created_at timestamptz not null default now()
@@ -67,6 +69,7 @@ create table leads (
   exchange_count int not null default 0,
   resume_at timestamptz,
   needs_human boolean not null default false,
+  bounced_at timestamptz,
   handoff_reason text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
@@ -80,6 +83,8 @@ create index leads_needs_human_idx on leads (tenant_id) where needs_human;
 -- busca por resume_at vencido seria varredura sequencial da tabela inteira.
 create index leads_resume_idx
   on leads (tenant_id, resume_at) where resume_at is not null;
+create index leads_bounced_idx on leads (tenant_id, campaign_id)
+  where bounced_at is not null;
 
 -- updated_at tem default now(), mas default só vale no insert: sem gatilho a
 -- coluna congela no momento da criação e passa a mentir sobre o lead.
@@ -111,6 +116,7 @@ create table messages (
   confidence numeric,
   ai_reasoning text,
   external_id text,
+  shadow boolean not null default false,
   created_at timestamptz not null default now()
 );
 create index messages_lead_idx on messages (lead_id, created_at);
