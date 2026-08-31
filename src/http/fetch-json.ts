@@ -28,6 +28,17 @@ function valeRepetir(status: number, extras: readonly number[]): boolean {
 const espera = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /**
+ * Quem estamos dizendo que somos.
+ *
+ * Não é cortesia: a BrasilAPI roda atrás da borda da Vercel, que recusa com
+ * 403 o user-agent padrão do Node (`node`). Sem este cabeçalho, *toda*
+ * consulta de CNPJ falha em produção — e nenhum teste com mock enxergaria
+ * isso, porque o mock repete a suposição em vez de checá-la. Foi o teste de
+ * contrato ao vivo que descobriu.
+ */
+const USER_AGENT = "prospeccao/0.1";
+
+/**
  * Remove segredos da URL antes de ela entrar numa mensagem de erro.
  *
  * A Hunter autentica por query param, então a URL crua carrega a chave. Sem
@@ -73,7 +84,10 @@ export async function fetchJson<T>(
 
     let resposta: Response;
     try {
-      resposta = await fetchFn(url, { signal: controlador.signal });
+      resposta = await fetchFn(url, {
+        signal: controlador.signal,
+        headers: { accept: "application/json", "user-agent": USER_AGENT },
+      });
     } catch (erro) {
       // Um timeout falha de imediato: se o servidor não respondeu em 15 s,
       // insistir no mesmo instante raramente ajuda e atrasa o lote inteiro.

@@ -100,6 +100,26 @@ describe("fetchJson", () => {
   });
 });
 
+describe("fetchJson — identificação", () => {
+  it("manda um user-agent próprio, que a borda da BrasilAPI exige", async () => {
+    // O user-agent padrão do Node ("node") leva 403 na BrasilAPI, e toda
+    // consulta de CNPJ falharia em produção. Descoberto pelo teste de
+    // contrato ao vivo — nenhum mock pegaria, porque o mock repete a
+    // suposição.
+    let recebido: Record<string, string> | undefined;
+    const espiao = (async (_input: unknown, init?: RequestInit) => {
+      recebido = init?.headers as Record<string, string>;
+      return respostaJson({ ok: true });
+    }) as typeof fetch;
+
+    await fetchJson("https://brasilapi.com.br/api/cnpj/v1/00000000000191", {
+      fetch: espiao,
+    });
+
+    expect(recebido?.["user-agent"]).toBe("prospeccao/0.1");
+  });
+});
+
 /**
  * A Hunter autentica por query param. Qualquer mensagem de erro que carregue a
  * URL crua acaba gravada em `events` e nos logs — com a chave em texto claro.
