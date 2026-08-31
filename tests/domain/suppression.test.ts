@@ -3,6 +3,7 @@ import {
   normalizeEmail,
   extractDomain,
   isSuppressed,
+  assertSendable,
   ruleForOptOut,
   type SuppressionRule,
 } from "../../src/domain/suppression.js";
@@ -65,6 +66,33 @@ describe("isSuppressed", () => {
 
   it("trata e-mail malformado como suprimido, por segurança", () => {
     expect(isSuppressed("sem-arroba", regras)).toBe(true);
+  });
+});
+
+describe("assertSendable", () => {
+  const regras: SuppressionRule[] = [
+    { kind: "email", value: "chato@empresa.com" },
+    { kind: "domain", value: "concorrente.com.br" },
+  ];
+
+  it("deixa passar endereço liberado", () => {
+    expect(() => assertSendable("novo@empresa.com", regras)).not.toThrow();
+  });
+
+  it("bloqueia endereço na lista de supressão citando o destinatário", () => {
+    expect(() => assertSendable("chato@empresa.com", regras)).toThrow(
+      /chato@empresa\.com/,
+    );
+  });
+
+  it("bloqueia endereço de domínio suprimido", () => {
+    expect(() =>
+      assertSendable("alguem@concorrente.com.br", regras),
+    ).toThrow(/suprimid/i);
+  });
+
+  it("bloqueia endereço malformado", () => {
+    expect(() => assertSendable("sem-arroba", regras)).toThrow(/suprimid/i);
   });
 });
 

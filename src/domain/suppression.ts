@@ -40,6 +40,25 @@ export function isSuppressed(
   });
 }
 
+/**
+ * Trava obrigatória do caminho de envio: chame antes de qualquer disparo.
+ *
+ * "Zero envios para endereço suprimido ou inválido" é critério de sucesso do
+ * produto, e uma convenção que vive só na cabeça de quem revisa acaba
+ * esquecida. Uma função com nome, que estoura, não tem como ser esquecida em
+ * silêncio — o envio quebra alto em vez de sair para quem pediu para parar.
+ */
+export function assertSendable(
+  email: string,
+  rules: readonly SuppressionRule[],
+): void {
+  if (isSuppressed(email, rules)) {
+    throw new Error(
+      `Envio bloqueado: o endereço ${email} está suprimido ou é inválido.`,
+    );
+  }
+}
+
 export function ruleForOptOut(email: string): SuppressionRule {
   return { kind: "email", value: normalizeEmail(email) };
 }
