@@ -1,5 +1,3 @@
-create extension if not exists "pgcrypto";
-
 create type lead_stage as enum (
   'discovered', 'enriched', 'contacted', 'in_conversation',
   'meeting_booked', 'discarded', 'error'

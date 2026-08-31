@@ -33,7 +33,7 @@ export interface Campaign {
   scheduling_link: string;
   daily_send_limit: number;
   status: "active" | "paused" | "archived";
-  created_at: string;
+  created_at: Date;
 }
 
 export interface Company {
@@ -50,7 +50,7 @@ export interface Company {
   summary: string | null;
   source: string;
   enrichment_status: "pending" | "enriched" | "failed";
-  created_at: string;
+  created_at: Date;
 }
 
 export interface Lead {
@@ -65,11 +65,11 @@ export interface Lead {
   stage: LeadStage;
   discard_reason: string | null;
   exchange_count: number;
-  resume_at: string | null;
+  resume_at: Date | null;
   needs_human: boolean;
   handoff_reason: string | null;
-  created_at: string;
-  updated_at: string;
+  created_at: Date;
+  updated_at: Date;
 }
 
 export interface Message {
@@ -83,7 +83,7 @@ export interface Message {
   confidence: number | null;
   ai_reasoning: string | null;
   external_id: string | null;
-  created_at: string;
+  created_at: Date;
 }
 
 export interface SuppressionEntry {
@@ -92,5 +92,5 @@ export interface SuppressionEntry {
   value: string;
   kind: "email" | "domain";
   reason: string | null;
-  created_at: string;
+  created_at: Date;
 }

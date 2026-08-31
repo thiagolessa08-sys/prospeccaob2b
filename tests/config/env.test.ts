@@ -5,6 +5,7 @@ const validSource = {
   ANTHROPIC_API_KEY: "sk-ant-teste",
   SUPABASE_URL: "https://abc.supabase.co",
   SUPABASE_SERVICE_ROLE_KEY: "chave-de-servico",
+  DATABASE_URL: "postgresql://x",
 };
 
 describe("loadEnv", () => {
