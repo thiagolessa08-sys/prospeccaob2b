@@ -6,6 +6,7 @@ const validSource = {
   SUPABASE_URL: "https://abc.supabase.co",
   SUPABASE_SERVICE_ROLE_KEY: "chave-de-servico",
   DATABASE_URL: "postgresql://x",
+  HUNTER_API_KEY: "chave",
 };
 
 describe("loadEnv", () => {
