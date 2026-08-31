@@ -32,8 +32,9 @@
 
 **Interfaces:**
 - Consumes: nada (primeira task).
-- Produces: `loadEnv(source: Record<string, string | undefined>): Env` e a constante `env: Env`, onde
+- Produces: `loadEnv(source: Record<string, string | undefined>): Env` e o acessor memoizado `env(): Env`, onde
   `Env = { ANTHROPIC_API_KEY: string; SUPABASE_URL: string; SUPABASE_SERVICE_ROLE_KEY: string }`.
+  As tasks seguintes consomem chamando `env()`, nunca `env` direto.
 
 - [ ] **Step 1: Criar `package.json`**
 
@@ -49,7 +50,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.70.0",
+    "@anthropic-ai/sdk": "^0.122.0",
     "@supabase/supabase-js": "^2.45.0",
     "zod": "^3.25.0"
   },
@@ -659,7 +660,7 @@ export function assertTransition(from: LeadStage, to: LeadStage): void {
 - [ ] **Step 4: Rodar o teste e confirmar que passa**
 
 Run: `npm test -- tests/domain/stages.test.ts`
-Esperado: PASS (12 testes).
+Esperado: PASS (13 testes).
 
 - [ ] **Step 5: Commit**
 
@@ -828,7 +829,7 @@ export function ruleForOptOut(email: string): SuppressionRule {
 - [ ] **Step 4: Rodar o teste e confirmar que passa**
 
 Run: `npm test -- tests/domain/suppression.test.ts`
-Esperado: PASS (11 testes).
+Esperado: PASS (13 testes).
 
 - [ ] **Step 5: Commit**
 
@@ -1045,7 +1046,7 @@ console.log(JSON.stringify(filtros, null, 2));
 Run: `npx tsx scripts/smoke-niche.ts` (com `ANTHROPIC_API_KEY` no ambiente)
 Esperado: imprime um objeto JSON com as sete chaves; `ufs` contém `"SC"` e `target_roles` menciona TI.
 
-Se falhar por incompatibilidade de versão do Zod com o helper, ajuste a versão do `zod` no `package.json` (o helper do SDK aceita Zod 3 e 4 conforme a versão do SDK) e rode novamente. Se não houver chave de API disponível, pule este passo e registre a pendência — mas não replique o padrão nas Tasks 6, 7 e 9 antes de validá-lo.
+Se não houver chave de API disponível, pule este passo e registre a pendência. A compatibilidade de versões já foi validada estaticamente com `@anthropic-ai/sdk@0.122.0` + `zod@3.25.x`: `zodOutputFormat` é exportado por `@anthropic-ai/sdk/helpers/zod`, `client.messages.parse` existe, `output_config` aceita `effort: 'low' | 'medium' | 'high' | 'xhigh' | 'max'`, e o campo de retorno é `parsed_output`. O que o smoke test acrescenta é a validação de comportamento em runtime (qualidade da saída do modelo), não de assinatura — o `npm run typecheck` cobre a assinatura.
 
 - [ ] **Step 7: Commit**
 
