@@ -71,7 +71,11 @@ describe("anexarMensagem", () => {
       externalId: "evt_classificada",
     });
     expect(msg?.intent).toBe("question_or_objection");
-    expect(Number(msg?.confidence)).toBeCloseTo(0.91);
+    // `confidence` é `numeric`, e nenhum driver converte `numeric` para
+    // número: o que volta é a string exata que o Postgres guardou. Quem for
+    // comparar com um limiar precisa converter antes.
+    expect(msg?.confidence).toBe("0.91");
+    expect(Number(msg?.confidence)).toBe(0.91);
     expect(msg?.ai_reasoning).toContain("preço");
   });
 

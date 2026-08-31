@@ -80,7 +80,14 @@ export interface Message {
   subject: string | null;
   body: string;
   intent: ReplyIntent | null;
-  confidence: number | null;
+  /**
+   * String, não número: a coluna é `numeric`, e nem o `pg` nem o `PGlite`
+   * convertem `numeric` para `number` — deliberadamente, para não perder
+   * precisão em ponto flutuante. Quem for comparar com um limiar precisa
+   * chamar `Number()` antes; declarar `number` aqui deixaria
+   * `decideNextAction({ confidence: "0.91" })` compilar em silêncio.
+   */
+  confidence: string | null;
   ai_reasoning: string | null;
   external_id: string | null;
   created_at: Date;

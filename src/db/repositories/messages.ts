@@ -8,6 +8,11 @@ export interface NovaMensagem {
   body: string;
   subject?: string;
   intent?: ReplyIntent;
+  /**
+   * Entra como número — escrever um `numeric` a partir de um `number` é
+   * seguro. Volta como string em `Message.confidence`, porque nenhum dos dois
+   * drivers converte `numeric`.
+   */
   confidence?: number;
   aiReasoning?: string;
   externalId?: string;
