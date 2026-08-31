@@ -8,6 +8,7 @@ export const ReplyClassificationSchema = z.object({
   confidence: z.number(),
   reasoning: z.string(),
   key_points: z.array(z.string()),
+  suggested_resume_days: z.number().nullable(),
 });
 
 export type ReplyClassification = z.infer<typeof ReplyClassificationSchema>;
@@ -25,6 +26,7 @@ Escolha exatamente uma intenção:
 confidence: sua certeza na classificação, de 0 a 1. Use valor abaixo de 0,7 quando o texto for ambíguo, muito curto ou puder ter mais de uma leitura — um humano vai revisar esses casos.
 reasoning: uma frase em português explicando a escolha.
 key_points: os pontos concretos levantados pelo lead que a resposta precisa endereçar. Lista vazia se não houver nenhum.
+suggested_resume_days: em quantos dias o próprio lead pediu para ser procurado de novo ("me chame em duas semanas" = 14; "depois do fechamento do trimestre" = null). Use null sempre que ele não tiver indicado prazo algum — não estime por conta própria.
 
 Na dúvida entre "no" e "opt_out", escolha "opt_out": deixar de contatar alguém que queria conversar custa menos do que insistir com quem pediu para parar.`;
 

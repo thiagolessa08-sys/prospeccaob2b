@@ -15,6 +15,7 @@ function classificacao(
     confidence: 0.95,
     reasoning: "motivo",
     key_points: [],
+    suggested_resume_days: null,
     ...overrides,
   };
 }
@@ -224,6 +225,40 @@ describe("decideNextAction — travas de segurança", () => {
       type: "ignore",
       reason: "resposta fora do escopo",
     });
+  });
+});
+
+describe("decideNextAction — prazo de retomada pedido pelo lead", () => {
+  function retomada(suggested: number | null): number {
+    const acao = decidir({
+      classification: classificacao({
+        intent: "not_now",
+        suggested_resume_days: suggested,
+      }),
+      exchangeCount: 1,
+    });
+    if (acao.type !== "schedule_followup") {
+      throw new Error(`Esperava schedule_followup, veio ${acao.type}`);
+    }
+    return acao.resumeInDays;
+  }
+
+  it("respeita o prazo que o próprio lead pediu", () => {
+    expect(retomada(14)).toBe(14);
+  });
+
+  it("usa o padrão quando o lead não deu prazo", () => {
+    expect(retomada(null)).toBe(NOT_NOW_RESUME_DAYS);
+  });
+
+  it("usa o padrão diante de prazo sem sentido vindo do modelo", () => {
+    for (const lixo of [0, -30, Number.NaN, Number.POSITIVE_INFINITY, 5000]) {
+      expect(retomada(lixo)).toBe(NOT_NOW_RESUME_DAYS);
+    }
+  });
+
+  it("aceita o limite máximo de um ano", () => {
+    expect(retomada(365)).toBe(365);
   });
 });
 

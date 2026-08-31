@@ -6,8 +6,25 @@ export const CONFIDENCE_THRESHOLD = 0.7;
 /** Trocas com o lead antes de a automação entregar a conversa a um humano. */
 export const MAX_EXCHANGES = 5;
 
-/** Espera antes de retomar um lead que pediu para ser procurado depois. */
+/** Espera padrão, usada só quando o lead não indicou prazo nenhum. */
 export const NOT_NOW_RESUME_DAYS = 90;
+
+/** Teto do prazo pedido pelo lead: acima de um ano, tratamos como erro do modelo. */
+const MAX_RESUME_DAYS = 365;
+
+/**
+ * O prazo que o próprio lead pediu vale mais do que a constante: quem escreveu
+ * "me procure em duas semanas" não deve ouvir "retomo em 90 dias". O valor vem
+ * do modelo, então só é aceito se for um número de dias plausível.
+ */
+function diasDeRetomada(sugestao: number | null): number {
+  if (sugestao === null || !Number.isFinite(sugestao)) {
+    return NOT_NOW_RESUME_DAYS;
+  }
+  const dias = Math.round(sugestao);
+  if (dias < 1 || dias > MAX_RESUME_DAYS) return NOT_NOW_RESUME_DAYS;
+  return dias;
+}
 
 /**
  * Os campos `reason` são texto para humano lerem no painel e nos logs: podem
@@ -85,7 +102,7 @@ export function decideNextAction(input: {
     case "not_now":
       return {
         type: "schedule_followup",
-        resumeInDays: NOT_NOW_RESUME_DAYS,
+        resumeInDays: diasDeRetomada(classification.suggested_resume_days),
       };
   }
 }
