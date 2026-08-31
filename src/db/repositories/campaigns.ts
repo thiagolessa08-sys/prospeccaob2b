@@ -107,6 +107,23 @@ export async function contarEnviosEBounces(
   return { enviados: rows[0]!.enviados, bounces: rows[0]!.bounces };
 }
 
+/** Mensagens de verdade que já saíram hoje nesta campanha. */
+export async function contarEnviosDeHoje(
+  db: Db,
+  tenantId: string,
+  campaignId: string,
+): Promise<number> {
+  const { rows } = await db.query<{ total: number }>(
+    `select count(*)::int as total from messages m
+       join leads l on l.id = m.lead_id
+      where m.tenant_id = $1 and l.tenant_id = $1 and l.campaign_id = $2
+        and m.direction = 'outbound' and m.shadow = false
+        and m.created_at >= date_trunc('day', now())`,
+    [tenantId, campaignId],
+  );
+  return rows[0]!.total;
+}
+
 /**
  * Pausa a campanha. Idempotente: pausar uma já pausada não é erro.
  *

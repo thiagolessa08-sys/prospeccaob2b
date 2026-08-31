@@ -6,6 +6,7 @@ import {
   salvarFiltros,
   listarCampanhasAtivas,
   contarEnviosEBounces,
+  contarEnviosDeHoje,
   pausarCampanha,
   definirModoDeEnvio,
 } from "../../../src/db/repositories/campaigns.js";
@@ -265,6 +266,114 @@ describe("contarEnviosEBounces", () => {
       campanha.id,
     );
     expect(contagem.enviados).toBe(0);
+  });
+});
+
+describe("contarEnviosDeHoje", () => {
+  /** Campanha nova com um lead pronto, para escrever mensagens em cima. */
+  async function comLead(nome: string, cnpj: string) {
+    const campanha = await criarCampanha(banco.db, {
+      tenantId: banco.tenantId,
+      ...base,
+      name: nome,
+    });
+    await salvarEmpresas(banco.db, [
+      {
+        tenantId: banco.tenantId,
+        campaignId: campanha.id,
+        cnpj,
+        legalName: `Empresa ${nome}`,
+        tradeName: null,
+        website: null,
+        city: null,
+        uf: null,
+        employeeCount: null,
+        summary: null,
+        source: "cnpj",
+      },
+    ]);
+    const { rows } = await banco.db.query<{ id: string }>(
+      `select id from companies where cnpj = $1`,
+      [cnpj],
+    );
+    const lead = await criarLead(banco.db, {
+      tenantId: banco.tenantId,
+      campaignId: campanha.id,
+      companyId: rows[0]!.id,
+      fullName: null,
+      roleTitle: null,
+      email: `${cnpj}@exemplo.com.br`,
+      emailVerified: true,
+    });
+    return { campanha, lead };
+  }
+
+  it("conta as mensagens de saída reais do dia", async () => {
+    const { campanha, lead } = await comLead("Hoje", "96111111000101");
+    await anexarMensagem(banco.db, {
+      tenantId: banco.tenantId,
+      leadId: lead.id,
+      direction: "outbound",
+      body: "saiu hoje",
+    });
+
+    expect(
+      await contarEnviosDeHoje(banco.db, banco.tenantId, campanha.id),
+    ).toBe(1);
+  });
+
+  it("não conta ensaio em sombra — nada saiu", async () => {
+    const { campanha, lead } = await comLead("Sombra", "96222222000101");
+    await anexarMensagem(banco.db, {
+      tenantId: banco.tenantId,
+      leadId: lead.id,
+      direction: "outbound",
+      body: "ensaio",
+      shadow: true,
+    });
+
+    expect(
+      await contarEnviosDeHoje(banco.db, banco.tenantId, campanha.id),
+    ).toBe(0);
+  });
+
+  it("não conta mensagem de entrada", async () => {
+    const { campanha, lead } = await comLead("Entrada", "96333333000101");
+    await anexarMensagem(banco.db, {
+      tenantId: banco.tenantId,
+      leadId: lead.id,
+      direction: "inbound",
+      body: "resposta",
+    });
+
+    expect(
+      await contarEnviosDeHoje(banco.db, banco.tenantId, campanha.id),
+    ).toBe(0);
+  });
+
+  it("não conta o que saiu ontem", async () => {
+    const { campanha, lead } = await comLead("Ontem", "96444444000101");
+    const mensagem = await anexarMensagem(banco.db, {
+      tenantId: banco.tenantId,
+      leadId: lead.id,
+      direction: "outbound",
+      body: "saiu ontem",
+    });
+    await banco.db.query(
+      `update messages set created_at = now() - interval '1 day' where id = $1`,
+      [mensagem!.id],
+    );
+
+    expect(
+      await contarEnviosDeHoje(banco.db, banco.tenantId, campanha.id),
+    ).toBe(0);
+  });
+
+  it("devolve número, não string vinda do driver", async () => {
+    const { campanha } = await comLead("Tipo", "96555555000101");
+    expect(
+      typeof (await contarEnviosDeHoje(banco.db, banco.tenantId, campanha.id)),
+    ).toBe("number");
   });
 });
 

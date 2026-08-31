@@ -7,7 +7,10 @@ import {
   buscarLead,
   listarProntosParaContato,
 } from "../../src/db/repositories/leads.js";
-import { carregarConversa } from "../../src/db/repositories/messages.js";
+import {
+  anexarMensagem,
+  carregarConversa,
+} from "../../src/db/repositories/messages.js";
 import { adicionarSupressao } from "../../src/db/repositories/suppression.js";
 import { enviarLote } from "../../src/sending/enviar-lote.js";
 import { criarProvedorDeSombra } from "../../src/sending/shadow.js";
@@ -110,6 +113,14 @@ async function simularHistorico(
   }
 }
 
+let sequencia = 0;
+
+/**
+ * Provedor live falso que cumpre o contrato da fronteira: um envio bem
+ * sucedido deixa a linha em `messages`, como os dois adaptadores de verdade
+ * fazem. Sem isso o teto diário — que conta essas linhas — não teria o que ver,
+ * e o teste passaria enquanto a produção mandaria o dobro.
+ */
 function provedorFalso(): ColdEmailProvider & { enviados: string[] } {
   const enviados: string[] = [];
   return {
@@ -117,7 +128,18 @@ function provedorFalso(): ColdEmailProvider & { enviados: string[] } {
     modo: "live",
     async enviar(email) {
       enviados.push(email.email);
-      return { enviado: true, externalId: `ext_${enviados.length}`, sombra: false };
+      sequencia += 1;
+      const externalId = `ext_${sequencia}`;
+      await anexarMensagem(banco.db, {
+        tenantId: email.tenantId,
+        leadId: email.leadId,
+        direction: "outbound",
+        subject: email.assunto,
+        body: email.corpo,
+        externalId,
+        shadow: false,
+      });
+      return { enviado: true, externalId, sombra: false };
     },
     async contarBounces() {
       return null;
@@ -152,7 +174,7 @@ describe("enviarLote — caminho feliz", () => {
     }
   });
 
-  it("respeita o teto diário da campanha", async () => {
+  it("envia no máximo o teto diário numa invocação", async () => {
     const { campanha } = await cenario(5, 2);
     const provedor = provedorFalso();
 
@@ -163,6 +185,60 @@ describe("enviarLote — caminho feliz", () => {
 
     expect(resultado.enviados).toBe(2);
     expect(provedor.enviados).toHaveLength(2);
+  });
+});
+
+describe("enviarLote — teto diário de verdade", () => {
+  it("duas invocações no mesmo dia não passam do teto", async () => {
+    const { campanha } = await cenario(5, 2);
+    const primeiro = provedorFalso();
+    const segundo = provedorFalso();
+
+    const um = await enviarLote(
+      { db: banco.db, tenantId: banco.tenantId, campaignId: campanha.id, provedor: primeiro },
+      { escreverEmail: escreverEmailFalso as never },
+    );
+    const dois = await enviarLote(
+      { db: banco.db, tenantId: banco.tenantId, campaignId: campanha.id, provedor: segundo },
+      { escreverEmail: escreverEmailFalso as never },
+    );
+
+    // Sem o desconto do que já saiu hoje, a segunda chamada pegaria os dois
+    // leads seguintes e o dia fecharia com 4.
+    expect(um.enviados).toBe(2);
+    expect(dois.enviados).toBe(0);
+    expect(segundo.enviados).toHaveLength(0);
+    expect(dois.motivo).toMatch(/teto diário/i);
+  });
+
+  it("desconta apenas o que sobrou do teto", async () => {
+    const { campanha, leads } = await cenario(5, 3);
+    await simularHistorico(leads.slice(0, 2)); // 2 envios reais hoje
+    const provedor = provedorFalso();
+
+    const resultado = await enviarLote(
+      { db: banco.db, tenantId: banco.tenantId, campaignId: campanha.id, provedor },
+      { escreverEmail: escreverEmailFalso as never },
+    );
+
+    expect(resultado.enviados).toBe(1);
+  });
+
+  it("o ensaio usa o teto cheio: nada saiu de verdade para descontar", async () => {
+    const { campanha, leads } = await cenario(3, 3, "shadow");
+    await simularHistorico(leads); // 3 envios reais de um dia em que era live
+
+    const resultado = await enviarLote(
+      {
+        db: banco.db,
+        tenantId: banco.tenantId,
+        campaignId: campanha.id,
+        provedor: criarProvedorDeSombra(banco.db),
+      },
+      { escreverEmail: escreverEmailFalso as never },
+    );
+
+    expect(resultado.enviados).toBe(3);
   });
 });
 

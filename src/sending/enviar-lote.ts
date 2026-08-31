@@ -1,6 +1,7 @@
 import type { Db } from "../db/port.js";
 import {
   buscarCampanha,
+  contarEnviosDeHoje,
   contarEnviosEBounces,
   pausarCampanha,
 } from "../db/repositories/campaigns.js";
@@ -101,11 +102,33 @@ export async function enviarLote(
     });
   }
 
+  // Teto diário de verdade, não por invocação.
+  //
+  // O `LIMIT` sozinho não segura nada: os leads enviados saem de
+  // `stage = 'enriched'`, então uma segunda chamada no mesmo dia pega os N
+  // seguintes e duas invocações mandam 2N. Só bateria com os "20 a 50 por dia"
+  // do spec se o agendador disparasse exatamente uma vez e nunca repetisse — e
+  // repetir é a reação natural a um lote interrompido no meio.
+  //
+  // Só vale para o modo live: o ensaio não manda e-mail nenhum, então limitá-lo
+  // pelo que já saiu de verdade não faz sentido.
+  const jaSaiuHoje =
+    provedor.modo === "live"
+      ? await contarEnviosDeHoje(db, tenantId, campaignId)
+      : 0;
+  const restante = campanha.daily_send_limit - jaSaiuHoje;
+  if (restante <= 0) {
+    return {
+      ...vazio,
+      motivo: `Teto diário de ${campanha.daily_send_limit} já atingido hoje (${jaSaiuHoje} enviado(s)).`,
+    };
+  }
+
   const prontos = await listarProntosParaContato(
     db,
     tenantId,
     campaignId,
-    campanha.daily_send_limit,
+    restante,
   );
   if (prontos.length === 0) {
     return { ...vazio, motivo: "Nenhum lead pronto para contato." };
