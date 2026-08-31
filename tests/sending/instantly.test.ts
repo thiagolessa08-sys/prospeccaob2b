@@ -3,6 +3,7 @@ import { subirBanco, type BancoDeTeste } from "../helpers/pg.js";
 import { salvarEmpresas } from "../../src/db/repositories/companies.js";
 import { criarLead } from "../../src/db/repositories/leads.js";
 import { carregarConversa } from "../../src/db/repositories/messages.js";
+import { adicionarSupressao } from "../../src/db/repositories/suppression.js";
 import { criarProvedorInstantly } from "../../src/sending/instantly.js";
 import { respostaJson, respostaVazia, fetchFalso } from "../helpers/http-mock.js";
 
@@ -275,6 +276,75 @@ describe("criarProvedorInstantly — enviar", () => {
     ) as Record<string, unknown>;
     expect(corpoEnviado).not.toHaveProperty("first_name");
     expect(corpoEnviado).not.toHaveProperty("company_name");
+  });
+});
+
+describe("criarProvedorInstantly — trava de supressão na última milha", () => {
+  it("estoura antes de qualquer HTTP ou gravação para endereço suprimido", async () => {
+    const fake = fetchFalso([respostaJson({ id: "nunca_criado" })]);
+    const provedorComRegra = criarProvedorInstantly(
+      {
+        apiKey: CHAVE,
+        campanhaInstantly: CAMPANHA,
+        db: banco.db,
+        premissaValidadaEm: PREMISSA,
+        carregarRegras: async () => [
+          { kind: "email", value: "joao@instantly.com.br" },
+        ],
+      },
+      { fetch: fake },
+    );
+
+    await expect(
+      provedorComRegra.enviar(email({ assunto: "Bloqueado na fronteira" })),
+    ).rejects.toThrow(/suprimido ou é inválido/i);
+
+    expect(fake.chamadas).toHaveLength(0);
+    const conversa = await carregarConversa(banco.db, banco.tenantId, leadId);
+    expect(
+      conversa.find((m) => m.subject === "Bloqueado na fronteira"),
+    ).toBeUndefined();
+  });
+
+  it("bloqueia também pelo domínio suprimido", async () => {
+    const fake = fetchFalso([]);
+    const provedorComRegra = criarProvedorInstantly(
+      {
+        apiKey: CHAVE,
+        campanhaInstantly: CAMPANHA,
+        db: banco.db,
+        premissaValidadaEm: PREMISSA,
+        carregarRegras: async () => [
+          { kind: "domain", value: "instantly.com.br" },
+        ],
+      },
+      { fetch: fake },
+    );
+
+    await expect(provedorComRegra.enviar(email())).rejects.toThrow(
+      /suprimido ou é inválido/i,
+    );
+    expect(fake.chamadas).toHaveLength(0);
+  });
+
+  it("por padrão consulta a lista de supressão do próprio banco", async () => {
+    await adicionarSupressao(
+      banco.db,
+      banco.tenantId,
+      { kind: "email", value: "joao@instantly.com.br" },
+      "descadastro",
+    );
+    const fake = fetchFalso([]);
+
+    await expect(provedor(fake).enviar(email())).rejects.toThrow(
+      /suprimido ou é inválido/i,
+    );
+    expect(fake.chamadas).toHaveLength(0);
+
+    await banco.db.query(
+      `delete from suppression_list where tenant_id = $1 and value = $2`,
+      [banco.tenantId, "joao@instantly.com.br"],
+    );
   });
 });
 

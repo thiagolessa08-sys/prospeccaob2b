@@ -3,6 +3,7 @@ import { subirBanco, type BancoDeTeste } from "../helpers/pg.js";
 import { salvarEmpresas } from "../../src/db/repositories/companies.js";
 import { criarLead } from "../../src/db/repositories/leads.js";
 import { carregarConversa } from "../../src/db/repositories/messages.js";
+import { adicionarSupressao } from "../../src/db/repositories/suppression.js";
 import { criarProvedorDeSombra } from "../../src/sending/shadow.js";
 
 let banco: BancoDeTeste;
@@ -102,6 +103,39 @@ describe("provedor de sombra", () => {
       [banco.tenantId],
     );
     expect(rows[0]?.kind).toBe("envio_em_sombra");
+  });
+
+  it("estoura antes de gravar qualquer coisa para endereço suprimido", async () => {
+    const provedor = criarProvedorDeSombra(banco.db, {
+      carregarRegras: async () => [
+        { kind: "email", value: "maria@sombra.com.br" },
+      ],
+    });
+
+    await expect(
+      provedor.enviar(email({ assunto: "Nunca ensaiada" })),
+    ).rejects.toThrow(/suprimido ou é inválido/i);
+
+    const conversa = await carregarConversa(banco.db, banco.tenantId, leadId);
+    expect(conversa.find((m) => m.subject === "Nunca ensaiada")).toBeUndefined();
+  });
+
+  it("por padrão consulta a lista de supressão do próprio banco", async () => {
+    await adicionarSupressao(
+      banco.db,
+      banco.tenantId,
+      { kind: "domain", value: "sombra.com.br" },
+      "descadastro",
+    );
+
+    await expect(
+      criarProvedorDeSombra(banco.db).enviar(email({ assunto: "Nem ensaio" })),
+    ).rejects.toThrow(/suprimido ou é inválido/i);
+
+    await banco.db.query(
+      `delete from suppression_list where tenant_id = $1 and value = $2`,
+      [banco.tenantId, "sombra.com.br"],
+    );
   });
 
   it("não sabe informar bounces", async () => {

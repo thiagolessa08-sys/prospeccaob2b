@@ -2,6 +2,11 @@ import { fetchJson, type FetchLike } from "../http/fetch-json.js";
 import type { Db } from "../db/port.js";
 import { anexarMensagem } from "../db/repositories/messages.js";
 import { registrarEvento } from "../db/repositories/events.js";
+import { carregarRegrasDeSupressao } from "../db/repositories/suppression.js";
+import {
+  assertSendable,
+  type SuppressionRule,
+} from "../domain/suppression.js";
 import type {
   ColdEmailProvider,
   EmailParaEnviar,
@@ -41,6 +46,13 @@ export interface ConfigDoInstantly {
    * o construtor recusa, e o primeiro envio real não acontece por acidente.
    */
   premissaValidadaEm: string;
+  /**
+   * Como obter as regras de supressão do tenant. Padrão: a lista do próprio
+   * banco. É função e não lista porque as regras são por tenant e o provedor
+   * atravessa vários — e porque um descadastro precisa valer no lote seguinte,
+   * não só no próximo restart.
+   */
+  carregarRegras?: (tenantId: string) => Promise<readonly SuppressionRule[]>;
 }
 
 export function criarProvedorInstantly(
@@ -65,10 +77,23 @@ export function criarProvedorInstantly(
     "content-type": "application/json",
   };
 
+  const carregarRegras =
+    config.carregarRegras ??
+    ((tenantId: string) => carregarRegrasDeSupressao(config.db, tenantId));
+
   return {
     modo: "live",
 
     async enviar(email: EmailParaEnviar): Promise<ResultadoDoEnvio> {
+      // Última milha. "Zero envios para endereço suprimido ou inválido" é
+      // critério de sucesso do produto, e o pulo do laço em `enviarLote`
+      // protege exatamente um ponto de chamada — respostas, follow-ups e
+      // qualquer `enviar()` direto de um plano futuro passariam por fora.
+      // Aqui é a fronteira que todo envio obrigatoriamente atravessa; estourar
+      // é seguro porque é o único jeito de esta trava não ser esquecida em
+      // silêncio, e o laço continua sendo o caminho rápido.
+      assertSendable(email.email, await carregarRegras(email.tenantId));
+
       // Campos nulos são omitidos: o Instantly aceita ausência, e mandar null
       // explícito sobrescreveria dado que ele já tenha do lead.
       const corpo: Record<string, unknown> = {
