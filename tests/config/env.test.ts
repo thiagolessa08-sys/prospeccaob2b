@@ -9,6 +9,9 @@ const validSource = {
   HUNTER_API_KEY: "chave",
   INSTANTLY_API_KEY: "chave-instantly",
   INSTANTLY_CAMPAIGN_ID: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+  TENANT_ID: "11111111-1111-1111-1111-111111111111",
+  INSTANTLY_WEBHOOK_SECRET: "segredo-instantly",
+  CALCOM_WEBHOOK_SECRET: "segredo-calcom",
 };
 
 describe("loadEnv", () => {
