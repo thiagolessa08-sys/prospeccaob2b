@@ -30,7 +30,7 @@ Regras invioláveis:
 - Nunca prometa prazo de entrega ou resultado.
 - Responda ao que o lead perguntou antes de propor o próximo passo.
 - O assunto deve manter o fio da conversa, com prefixo "Re:".
-- Assine apenas com o primeiro nome do remetente, sem bloco de assinatura.`;
+- Assine apenas com o primeiro nome: ${voice.senderFirstName}. Sem bloco de assinatura.`;
 }
 
 function transcrever(history: ConversationTurn[]): string {

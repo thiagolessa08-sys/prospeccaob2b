@@ -7,6 +7,7 @@ const RASCUNHO = { subject: "Re: proposta", body: "Claro, segue o link..." };
 const VOZ = {
   offerDescription: "Consultoria de dados e BI para indústrias.",
   tone: "consultivo, direto, sem jargão",
+  senderFirstName: "Thiago",
 };
 
 const LINK = "https://cal.com/thiago/30min";
@@ -99,6 +100,9 @@ describe("writeReply", () => {
     const system = parse.mock.calls[0]![0].system[0];
     expect(system.text).toContain("consultivo, direto, sem jargão");
     expect(system.cache_control).toEqual({ type: "ephemeral" });
+    // A assinatura vem da campanha, e não da imaginação do modelo — se cada
+    // módulo inventasse um nome, a mesma thread seria assinada por duas pessoas.
+    expect(system.text).toContain("Thiago");
   });
 
   it("escreve despedida cordial ao encerrar por recusa", async () => {

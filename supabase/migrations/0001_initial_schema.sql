@@ -23,6 +23,9 @@ create table campaigns (
   filters jsonb,
   offer_description text not null,
   tone text not null default 'consultivo, direto, sem jargão',
+  -- Nome real de quem assina os e-mails. Obrigatório: sem ele o modelo inventa
+  -- um nome humano, e uma mesma thread acabaria assinada por duas pessoas.
+  sender_first_name text not null,
   scheduling_link text not null,
   daily_send_limit int not null default 20,
   status text not null default 'active'

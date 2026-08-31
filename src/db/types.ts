@@ -29,6 +29,7 @@ export interface Campaign {
   filters: unknown | null;
   offer_description: string;
   tone: string;
+  sender_first_name: string;
   scheduling_link: string;
   daily_send_limit: number;
   status: "active" | "paused" | "archived";

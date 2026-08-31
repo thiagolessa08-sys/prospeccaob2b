@@ -11,6 +11,7 @@ const ENTRADA = {
   voice: {
     offerDescription: "Consultoria de dados e BI para indústrias.",
     tone: "consultivo, direto, sem jargão",
+    senderFirstName: "Thiago",
   },
   company: {
     legalName: "Alfa Alimentos LTDA",
@@ -45,6 +46,8 @@ describe("writeFirstEmail", () => {
     expect(system.text).toContain("Consultoria de dados e BI para indústrias.");
     expect(system.text).toContain("consultivo, direto, sem jargão");
     expect(system.cache_control).toEqual({ type: "ephemeral" });
+    // O nome de quem assina vem da campanha: o modelo nunca deve inventá-lo.
+    expect(system.text).toContain("Thiago");
     // Dados voláteis ficam fora do prefixo cacheado.
     expect(system.text).not.toContain("Alfa Alimentos");
 

@@ -12,6 +12,12 @@ export type EmailDraft = z.infer<typeof EmailDraftSchema>;
 export interface CampaignVoice {
   offerDescription: string;
   tone: string;
+  /**
+   * Primeiro nome de quem assina, vindo de `campaigns.sender_first_name`.
+   * Sem ele o modelo inventa um nome — e inventa um diferente em cada módulo,
+   * o que é falsidade de identidade e problema de transparência sob a LGPD.
+   */
+  senderFirstName: string;
 }
 
 export interface CompanyContext {
@@ -49,7 +55,7 @@ Regras invioláveis:
 - Nunca inclua link de agendamento neste primeiro e-mail.
 - Faça uma única pergunta clara no final, de baixo compromisso.
 - Não use saudações genéricas do tipo "Espero que esteja tudo bem".
-- Assine apenas com o primeiro nome do remetente, sem bloco de assinatura.`;
+- Assine apenas com o primeiro nome: ${voice.senderFirstName}. Sem bloco de assinatura.`;
 }
 
 function buildLeadPrompt(company: CompanyContext, lead: LeadContext): string {
