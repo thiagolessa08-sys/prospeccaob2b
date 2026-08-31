@@ -166,6 +166,19 @@ export async function enviarLote(
       }
 
       const empresa = await buscarEmpresaDoLead(db, tenantId, lead.company_id);
+      // Sem empresa não há e-mail que preste: a IA escreveria sobre uma
+      // companhia sem nome, e o prospect receberia um texto genérico assinado
+      // por nós. Melhor não enviar e deixar registrado o que faltou.
+      if (!empresa) {
+        await registrarEvento(db, {
+          tenantId,
+          leadId: lead.id,
+          kind: "lead_sem_empresa",
+          payload: { companyId: lead.company_id },
+        });
+        falhas += 1;
+        continue;
+      }
 
       let rascunho: { subject: string; body: string };
       try {
@@ -176,11 +189,11 @@ export async function enviarLote(
             senderFirstName: campanha.sender_first_name,
           },
           company: {
-            legalName: empresa?.legal_name ?? "",
-            tradeName: empresa?.trade_name ?? null,
-            summary: empresa?.summary ?? null,
-            city: empresa?.city ?? null,
-            uf: empresa?.uf ?? null,
+            legalName: empresa.legal_name,
+            tradeName: empresa.trade_name,
+            summary: empresa.summary,
+            city: empresa.city,
+            uf: empresa.uf,
           },
           lead: { fullName: lead.full_name, roleTitle: lead.role_title },
         });
@@ -202,8 +215,8 @@ export async function enviarLote(
         email: lead.email,
         primeiroNome: primeiroNome || null,
         sobrenome: resto.length ? resto[resto.length - 1]! : null,
-        empresa: empresa?.trade_name ?? empresa?.legal_name ?? null,
-        site: empresa?.website ?? null,
+        empresa: empresa.trade_name ?? empresa.legal_name,
+        site: empresa.website,
         assunto: rascunho.subject,
         corpo: rascunho.body,
       });

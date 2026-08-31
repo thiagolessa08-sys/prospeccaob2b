@@ -503,6 +503,45 @@ describe("enviarLote — isolamento de falha por lead", () => {
   });
 });
 
+describe("enviarLote — lead sem empresa", () => {
+  it("conta falha e pula, em vez de deixar a IA escrever sobre uma empresa sem nome", async () => {
+    const { campanha, leads } = await cenario(2);
+    const provedor = provedorFalso();
+
+    // A empresa some da leitura: o `buscarEmpresaDoLead` volta null. Antes
+    // isso virava `legalName: ""` e o prospect recebia um texto genérico.
+    const semEmpresa = leads[0]!.id;
+    const dbSemEmpresa = {
+      query: async (texto: string, params?: readonly unknown[]) => {
+        if (
+          /from companies where tenant_id/i.test(texto) &&
+          params?.[1] === leads[0]!.company_id
+        ) {
+          return { rows: [] };
+        }
+        return banco.db.query(texto, params);
+      },
+    } as typeof banco.db;
+
+    const resultado = await enviarLote(
+      { db: dbSemEmpresa, tenantId: banco.tenantId, campaignId: campanha.id, provedor },
+      { escreverEmail: escreverEmailFalso as never },
+    );
+
+    expect(resultado.falhas).toBe(2); // as duas leads compartilham a empresa
+    expect(resultado.enviados).toBe(0);
+    expect(provedor.enviados).toHaveLength(0);
+    expect(escreverEmailFalso).not.toHaveBeenCalled();
+
+    const { rows } = await banco.db.query(
+      `select 1 from events
+       where tenant_id = $1 and kind = 'lead_sem_empresa' and lead_id = $2`,
+      [banco.tenantId, semEmpresa],
+    );
+    expect(rows).toHaveLength(1);
+  });
+});
+
 describe("enviarLote — disjuntor", () => {
   it("pausa a campanha e não envia quando o bounce local passa do limite", async () => {
     const { campanha, leads } = await cenario(21, 50);

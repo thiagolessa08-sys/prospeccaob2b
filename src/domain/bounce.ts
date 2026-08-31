@@ -46,7 +46,10 @@ export function avaliarDisjuntor(input: {
   const taxa = Math.min(1, bouncesValidos / enviados);
 
   if (taxa > LIMITE_DE_BOUNCE) {
-    const percentual = (taxa * 100).toFixed(1);
+    // Duas casas, não uma: com `toFixed(1)` uma taxa de 3,001% virava
+    // "3.0%, acima do limite de 3%" — a mensagem se contradizendo justo no
+    // momento em que alguém precisa entender por que a campanha parou.
+    const percentual = (taxa * 100).toFixed(2);
     const limite = (LIMITE_DE_BOUNCE * 100).toFixed(0);
     return {
       abrir: true,

@@ -33,6 +33,15 @@ describe("avaliarDisjuntor — com amostra suficiente", () => {
     expect(estado.motivo).toMatch(/3/);
   });
 
+  it("não arredonda a taxa até se contradizer", () => {
+    // 3,04% — com uma casa decimal a mensagem virava "3.0%, acima do limite
+    // de 3%", que se lê como erro justo quando alguém precisa entender por
+    // que a campanha parou.
+    const estado = avaliarDisjuntor({ enviados: 2500, bounces: 76 });
+    expect(estado.abrir).toBe(true);
+    expect(estado.motivo).toContain("3.04%");
+  });
+
   it("não abre exatamente no limite", () => {
     const estado = avaliarDisjuntor({ enviados: 100, bounces: 3 });
     expect(estado.abrir).toBe(false);
