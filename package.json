@@ -12,7 +12,7 @@
     "smoke:funil": "tsx scripts/smoke-funil.ts",
     "build": "tsc -p tsconfig.build.json",
     "dev": "tsx src/api/main.ts",
-    "db:migrate": "tsx scripts/migrar.ts"
+    "db:migrate": "tsx src/db/migrar.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.122.0",

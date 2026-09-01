@@ -59,6 +59,11 @@ DATABASE_URL=... npm run db:migrate    # aplica o schema num Postgres vazio
 npm start                              # node dist/api/main.js
 ```
 
+No Railway a migration roda sozinha antes do servidor (`railway.json` →
+`startCommand`), usando a `DATABASE_URL` que já está no ambiente — não é
+preciso passar credencial de banco à mão. Ela sai limpa quando o schema já
+existe.
+
 Variáveis de ambiente: veja `.env.example`. Todas são exigidas no boot — o
 processo morre nomeando as que faltam, em vez de subir pela metade e falhar na
 primeira chamada de rota.

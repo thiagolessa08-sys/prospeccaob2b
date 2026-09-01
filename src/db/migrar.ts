@@ -4,13 +4,20 @@
  * Existe porque um Postgres novo (Railway, RDS, local) nasce vazio, e o app
  * sobe normalmente contra um banco sem tabela nenhuma — o pool do `pg` só
  * conecta na primeira consulta, então a falha só apareceria na primeira
- * chamada de rota, longe da causa.
+ * chamada de rota, longe da causa. Foi exatamente o que aconteceu no
+ * primeiro deploy: `/saude` respondia 200 e `/campaigns/ativas` dava 500.
  *
- *   DATABASE_URL=... npm run db:migrate
+ *   DATABASE_URL=... npm run db:migrate     (local)
  *
- * Não é idempotente de propósito: rodar duas vezes falha no `create table`
- * já existente, em vez de mascarar com IF NOT EXISTS uma migration que
- * mudou de conteúdo desde a primeira aplicação.
+ * Vive em `src/` — e não em `scripts/` — para ser compilado junto e poder
+ * rodar antes do servidor no start do Railway, onde a DATABASE_URL já está
+ * no ambiente. Assim ninguém precisa passar credencial de banco à mão.
+ *
+ * Sai limpo quando o schema já existe, porque roda a cada deploy. A checagem
+ * é grosseira de propósito (existe a tabela `tenants`?): com uma migration
+ * só, um controle de versão de migrations seria cerimônia sem uso. Ao
+ * acrescentar a segunda, troque isto por uma ferramenta de verdade em vez de
+ * empilhar checagens.
  */
 import pg from "pg";
 import { readFileSync } from "node:fs";
