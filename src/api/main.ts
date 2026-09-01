@@ -11,6 +11,7 @@ const app = criarApp({
   segredoInstantly: ambiente.INSTANTLY_WEBHOOK_SECRET,
   segredoCalcom: ambiente.CALCOM_WEBHOOK_SECRET,
   segredoN8n: ambiente.N8N_SHARED_SECRET,
+  senhaDoPainel: ambiente.PAINEL_SENHA,
   apiKeyHunter: ambiente.HUNTER_API_KEY,
   apiKeyCasaDosDados: ambiente.CASA_DOS_DADOS_API_KEY,
 });

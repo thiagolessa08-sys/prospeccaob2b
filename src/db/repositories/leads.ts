@@ -1,5 +1,5 @@
 import type { Db } from "../port.js";
-import type { Lead, LeadStage } from "../types.js";
+import { LEAD_STAGES, type Lead, type LeadStage } from "../types.js";
 import { assertTransition } from "../../domain/stages.js";
 
 export interface NovoLead {
@@ -299,4 +299,74 @@ export async function marcarBounce(
      where tenant_id = $1 and id = $2`,
     [tenantId, leadId],
   );
+}
+
+export type ContagemPorEstagio = Record<LeadStage, number>;
+
+/**
+ * Conta os leads da campanha por estágio.
+ *
+ * Todos os estágios entram com zero antes do `group by`: o SQL não devolve
+ * linha para estágio vazio, e o painel precisa mostrar "0 em conversa" — que
+ * é informação — em vez de omitir a coluna, que o operador leria como erro
+ * de carregamento. `::int` pelo mesmo motivo de `contarEmpresasPorStatus`.
+ */
+export async function contarLeadsPorEstagio(
+  db: Db,
+  tenantId: string,
+  campaignId: string,
+): Promise<ContagemPorEstagio> {
+  const { rows } = await db.query<{ stage: LeadStage; total: number }>(
+    `select stage, count(*)::int as total
+     from leads
+     where tenant_id = $1 and campaign_id = $2
+     group by stage`,
+    [tenantId, campaignId],
+  );
+
+  const contagem = {} as ContagemPorEstagio;
+  for (const estagio of LEAD_STAGES) contagem[estagio] = 0;
+  for (const linha of rows) {
+    contagem[linha.stage] = linha.total;
+  }
+  return contagem;
+}
+
+export interface LeadDoPainel extends Lead {
+  /** Nome da empresa, para a tela não precisar de uma segunda consulta por lead. */
+  empresa: string;
+}
+
+/**
+ * Lista os leads da campanha, do mais recente para o mais antigo.
+ *
+ * O join com `companies` repete o filtro de tenant nos dois lados. É de
+ * propósito, pela mesma razão que `criarLead` exige o `where exists`: as duas
+ * chaves estrangeiras são independentes, então um lead do tenant A apontando
+ * para empresa do tenant B é aceito pelo esquema. Juntar só por `company_id`
+ * exibiria o nome da empresa alheia na tela — que é exatamente o vazamento
+ * que aquela guarda existe para impedir.
+ */
+export async function listarLeadsDaCampanha(
+  db: Db,
+  tenantId: string,
+  campaignId: string,
+  limite: number,
+): Promise<LeadDoPainel[]> {
+  const { rows } = await db.query<LeadDoPainel>(
+    `select
+            l.id, l.tenant_id, l.campaign_id, l.company_id, l.full_name,
+            l.role_title, l.email, l.email_verified, l.stage, l.discard_reason,
+            l.handoff_reason, l.exchange_count, l.resume_at, l.needs_human,
+            l.bounced_at, l.created_at, l.updated_at,
+            coalesce(c.trade_name, c.legal_name) as empresa
+     from leads l
+     join companies c
+       on c.id = l.company_id and c.tenant_id = l.tenant_id
+     where l.tenant_id = $1 and l.campaign_id = $2
+     order by l.updated_at desc
+     limit $3`,
+    [tenantId, campaignId, limite],
+  );
+  return rows;
 }

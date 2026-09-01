@@ -25,6 +25,7 @@ function app() {
     segredoInstantly: SEGREDO_INSTANTLY,
     segredoCalcom: SEGREDO_CALCOM,
     segredoN8n: "segredo-n8n",
+    senhaDoPainel: "senha-do-painel",
     apiKeyHunter: "chave-hunter",
     apiKeyCasaDosDados: "chave-casa-dos-dados",
   });
@@ -124,6 +125,7 @@ describe("erros não tratados", () => {
         segredoInstantly: SEGREDO_INSTANTLY,
         segredoCalcom: SEGREDO_CALCOM,
         segredoN8n: "segredo-n8n",
+        senhaDoPainel: "senha-do-painel",
         apiKeyHunter: "chave-hunter",
         apiKeyCasaDosDados: "chave-casa-dos-dados",
       });

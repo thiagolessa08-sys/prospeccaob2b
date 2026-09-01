@@ -27,3 +27,35 @@ export async function registrarEvento(
     ],
   );
 }
+
+export interface EventoDoLead {
+  id: string;
+  kind: string;
+  payload: unknown | null;
+  created_at: Date;
+}
+
+/**
+ * Trilha de auditoria de um lead, do mais recente para o mais antigo.
+ *
+ * Filtra por `tenant_id` **e** `lead_id`. O `tenant_id` de `events` é anulável
+ * — falhas anteriores à resolução do tenant também são registradas — e um
+ * `where lead_id = $1` sozinho devolveria eventos de qualquer dono que
+ * apontasse para esse id.
+ */
+export async function listarEventosDoLead(
+  db: Db,
+  tenantId: string,
+  leadId: string,
+  limite: number,
+): Promise<EventoDoLead[]> {
+  const { rows } = await db.query<EventoDoLead>(
+    `select id, kind, payload, created_at
+     from events
+     where tenant_id = $1 and lead_id = $2
+     order by created_at desc
+     limit $3`,
+    [tenantId, leadId, limite],
+  );
+  return rows;
+}

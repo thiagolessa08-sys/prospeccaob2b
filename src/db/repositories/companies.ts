@@ -132,3 +132,43 @@ export async function marcarEnriquecimento(
     [tenantId, companyId, status],
   );
 }
+
+export interface ContagemDeEmpresas {
+  pending: number;
+  enriched: number;
+  failed: number;
+}
+
+/**
+ * Conta as empresas da campanha por status de enriquecimento.
+ *
+ * O `::int` é obrigatório: `count(*)` volta `number` no PGlite e **string** no
+ * node-pg, então sem o cast o painel somaria strings e mostraria "01" onde
+ * deveria mostrar 1.
+ *
+ * Os três status são preenchidos com zero antes do `group by` entrar. O SQL
+ * simplesmente não devolve linha para status sem nenhuma empresa, e uma coluna
+ * ausente viraria `undefined` na tela — que o operador lê como "não sei", e
+ * não como "nenhuma".
+ */
+export async function contarEmpresasPorStatus(
+  db: Db,
+  tenantId: string,
+  campaignId: string,
+): Promise<ContagemDeEmpresas> {
+  const { rows } = await db.query<{ status: string; total: number }>(
+    `select enrichment_status as status, count(*)::int as total
+     from companies
+     where tenant_id = $1 and campaign_id = $2
+     group by enrichment_status`,
+    [tenantId, campaignId],
+  );
+
+  const contagem: ContagemDeEmpresas = { pending: 0, enriched: 0, failed: 0 };
+  for (const linha of rows) {
+    if (linha.status in contagem) {
+      contagem[linha.status as keyof ContagemDeEmpresas] = linha.total;
+    }
+  }
+  return contagem;
+}

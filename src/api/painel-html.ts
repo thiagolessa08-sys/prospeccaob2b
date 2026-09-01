@@ -1,0 +1,502 @@
+/**
+ * A tela do operador, embutida como string.
+ *
+ * Embutida, e não servida de um `.html` no disco, porque o build é `tsc`: ele
+ * emite só o JavaScript para `dist/`, e um arquivo estático ficaria para trás
+ * — a página sumiria em produção e funcionaria em desenvolvimento, que é o
+ * pior jeito de descobrir o problema. É o mesmo motivo que fez a migration
+ * precisar de `caminho-migration.ts`.
+ *
+ * Servida pelo próprio Hono, na mesma origem da API, de propósito: não há CORS
+ * no servidor, então uma página hospedada em qualquer outro lugar não
+ * conseguiria chamar rota nenhuma daqui.
+ *
+ * Sem dependência externa — nenhuma fonte, nenhum CDN. A tela precisa abrir
+ * dentro de uma rede corporativa que bloqueia o que não conhece.
+ */
+export const PAINEL_HTML = `<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Prospecção B2B — Painel</title>
+<style>
+  :root {
+    --fundo: #f6f7f9; --papel: #fff; --borda: #dfe3e8; --texto: #14181d;
+    --fraco: #626c78; --acento: #1f6feb; --ok: #1a7f37; --alerta: #9a6700;
+    --erro: #cf222e; --codigo: #f0f2f5;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --fundo: #0d1117; --papel: #161b22; --borda: #30363d; --texto: #e6edf3;
+      --fraco: #9198a1; --acento: #4493f8; --ok: #3fb950; --alerta: #d29922;
+      --erro: #f85149; --codigo: #0d1117;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--fundo); color: var(--texto);
+    font: 15px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  header {
+    display: flex; gap: 12px; align-items: center; flex-wrap: wrap;
+    padding: 14px 20px; background: var(--papel);
+    border-bottom: 1px solid var(--borda); position: sticky; top: 0; z-index: 10;
+  }
+  header h1 { font-size: 16px; margin: 0; margin-right: auto; }
+  main { padding: 20px; max-width: 1100px; margin: 0 auto; }
+  h2 { font-size: 14px; text-transform: uppercase; letter-spacing: .04em;
+       color: var(--fraco); margin: 28px 0 10px; }
+  input, select, textarea, button {
+    font: inherit; color: inherit; border-radius: 6px;
+    border: 1px solid var(--borda); background: var(--papel); padding: 7px 10px;
+  }
+  input, textarea { width: 100%; }
+  button { cursor: pointer; background: var(--papel); }
+  button:hover:not(:disabled) { border-color: var(--acento); color: var(--acento); }
+  button:disabled { opacity: .5; cursor: progress; }
+  button.principal { background: var(--acento); border-color: var(--acento); color: #fff; }
+  button.principal:hover:not(:disabled) { color: #fff; opacity: .9; }
+  .cartao {
+    background: var(--papel); border: 1px solid var(--borda);
+    border-radius: 10px; padding: 16px; margin-bottom: 12px;
+  }
+  .linha { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .campos { display: grid; gap: 10px; grid-template-columns: 1fr 1fr; }
+  .campos label { display: block; font-size: 13px; color: var(--fraco); }
+  .campos .largo { grid-column: 1 / -1; }
+  .etiqueta {
+    font-size: 12px; padding: 2px 8px; border-radius: 999px;
+    border: 1px solid var(--borda); color: var(--fraco);
+  }
+  .numeros { display: flex; gap: 18px; flex-wrap: wrap; margin: 12px 0; }
+  .numeros div { font-size: 12px; color: var(--fraco); }
+  .numeros b { display: block; font-size: 20px; color: var(--texto); font-weight: 600; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--borda); }
+  th { font-size: 12px; color: var(--fraco); text-transform: uppercase; }
+  tbody tr[data-lead] { cursor: pointer; }
+  tbody tr[data-lead]:hover { background: var(--codigo); }
+  pre {
+    background: var(--codigo); border: 1px solid var(--borda); border-radius: 6px;
+    padding: 10px; overflow-x: auto; font-size: 12px; margin: 8px 0 0;
+    white-space: pre-wrap; word-break: break-word;
+  }
+  .rolagem { overflow-x: auto; }
+  .msg { border-left: 3px solid var(--borda); padding: 4px 0 4px 12px; margin: 12px 0; }
+  .msg.saida { border-color: var(--acento); }
+  .msg .quem { font-size: 12px; color: var(--fraco); margin-bottom: 4px; }
+  .msg .corpo { white-space: pre-wrap; }
+  .aviso { color: var(--erro); }
+  .vazio { color: var(--fraco); font-style: italic; }
+  dialog {
+    width: min(760px, 92vw); max-height: 86vh; border: 1px solid var(--borda);
+    border-radius: 12px; background: var(--papel); color: var(--texto); padding: 20px;
+  }
+  dialog::backdrop { background: rgba(0,0,0,.5); }
+  @media (max-width: 620px) { .campos { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Prospecção B2B</h1>
+  <input id="senha" type="password" placeholder="Senha do painel" style="width:220px"
+         autocomplete="current-password">
+  <button id="entrar" class="principal">Entrar</button>
+  <button id="recarregar" hidden>Recarregar</button>
+  <button id="sair" hidden>Sair</button>
+</header>
+
+<main>
+  <p id="estado" class="vazio">Entre com a senha do painel.</p>
+
+  <section id="conteudo" hidden>
+    <h2>Nova campanha</h2>
+    <div class="cartao">
+      <div class="campos">
+        <label>Nome<input id="f-name" placeholder="Ind&uacute;strias SC"></label>
+        <label>Seu primeiro nome<input id="f-sender" placeholder="Thiago"></label>
+        <label class="largo">Nicho, em texto livre
+          <textarea id="f-niche" rows="2" placeholder="ind&uacute;strias de alimentos em Santa Catarina com 50 a 200 funcion&aacute;rios"></textarea></label>
+        <label class="largo">Oferta<input id="f-offer" placeholder="BI e automa&ccedil;&atilde;o de processos"></label>
+        <label class="largo">Link de agendamento<input id="f-link" placeholder="https://cal.com/thiago/30min"></label>
+      </div>
+      <div class="linha" style="margin-top:12px">
+        <button id="criar" class="principal">Criar campanha</button>
+        <span id="criar-msg" class="vazio"></span>
+      </div>
+    </div>
+
+    <h2>Campanhas</h2>
+    <div id="campanhas"></div>
+  </section>
+</main>
+
+<dialog id="detalhe">
+  <div id="detalhe-corpo"></div>
+  <div style="margin-top:16px"><button id="fechar-detalhe">Fechar</button></div>
+</dialog>
+
+<script>
+"use strict";
+
+var ROTAS = [
+  { rota: "gerar-filtros", nome: "Gerar filtros" },
+  { rota: "descobrir-empresas", nome: "Descobrir empresas" },
+  { rota: "enriquecer-lote", nome: "Enriquecer" },
+  { rota: "enviar-lote", nome: "Enviar" },
+  { rota: "retomar-followups", nome: "Retomar follow-ups" }
+];
+
+var ESTAGIOS = [
+  ["discovered", "Descobertos"], ["enriched", "Enriquecidos"],
+  ["contacted", "Contatados"], ["in_conversation", "Em conversa"],
+  ["meeting_booked", "Reuni&otilde;es"], ["discarded", "Descartados"], ["error", "Erro"]
+];
+
+function $(id) { return document.getElementById(id); }
+
+function esc(v) {
+  if (v === null || v === undefined) return "";
+  return String(v).replace(/[&<>"']/g, function (c) {
+    return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+  });
+}
+
+/**
+ * Nao ha credencial guardada nesta pagina: a sessao vive num cookie HttpOnly,
+ * que o JavaScript daqui nao consegue ler nem escrever. O navegador o reenvia
+ * sozinho em toda chamada de mesma origem, entao nao ha nada a anexar aqui.
+ *
+ * Toda chamada passa por esta funcao para o 401 ter um unico tratamento:
+ * sessao expirada ou ausente devolve o operador para a tela de entrada, em vez
+ * de deixar a pagina tentando de novo para sempre.
+ */
+async function api(caminho, opcoes) {
+  opcoes = opcoes || {};
+  var cabecalhos = {};
+  if (opcoes.body) cabecalhos["content-type"] = "application/json";
+
+  var res = await fetch(caminho, {
+    method: opcoes.method || "GET",
+    headers: cabecalhos,
+    body: opcoes.body ? JSON.stringify(opcoes.body) : undefined
+  });
+
+  if (res.status === 401) {
+    mostrarEntrada("Sess&atilde;o expirada. Entre de novo.");
+    throw new Error("401");
+  }
+
+  var texto = await res.text();
+  var corpo;
+  try { corpo = JSON.parse(texto); } catch (e) { corpo = texto; }
+  if (!res.ok) throw new Error(typeof corpo === "string" ? corpo : JSON.stringify(corpo));
+  return corpo;
+}
+
+function mostrarEntrada(aviso) {
+  $("conteudo").hidden = true;
+  $("estado").hidden = false;
+  $("estado").innerHTML = aviso || "Entre com a senha do painel.";
+  $("estado").className = aviso ? "aviso" : "vazio";
+  $("senha").hidden = false;
+  $("entrar").hidden = false;
+  $("recarregar").hidden = true;
+  $("sair").hidden = true;
+}
+
+function mostrarPainel() {
+  $("senha").hidden = true;
+  $("entrar").hidden = true;
+  $("recarregar").hidden = false;
+  $("sair").hidden = false;
+}
+
+function dataCurta(iso) {
+  if (!iso) return "&mdash;";
+  var d = new Date(iso);
+  if (isNaN(d.getTime())) return "&mdash;";
+  return d.toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" });
+}
+
+async function carregar() {
+  $("estado").hidden = false;
+  $("estado").className = "vazio";
+  $("estado").textContent = "Carregando...";
+
+  var campanhas;
+  try {
+    campanhas = await api("/painel/campanhas");
+  } catch (e) {
+    if (e.message !== "401") mostrarEntrada("Falha ao carregar: " + esc(e.message));
+    return;
+  }
+
+  $("estado").hidden = true;
+  $("conteudo").hidden = false;
+  mostrarPainel();
+  desenharCampanhas(campanhas);
+}
+
+function desenharCampanhas(campanhas) {
+  var alvo = $("campanhas");
+  if (!campanhas.length) {
+    alvo.innerHTML = '<p class="vazio">Nenhuma campanha ainda. Crie a primeira acima.</p>';
+    return;
+  }
+
+  var html = "";
+  for (var i = 0; i < campanhas.length; i++) {
+    var c = campanhas[i];
+    html += '<div class="cartao">';
+    html += '<div class="linha"><strong>' + esc(c.name) + "</strong>";
+    html += '<span class="etiqueta">' + esc(c.status) + "</span>";
+    html += '<span class="etiqueta">' + esc(c.send_mode) + "</span>";
+    html += c.tem_filtros
+      ? '<span class="etiqueta">filtros ok</span>'
+      : '<span class="etiqueta" style="color:var(--alerta)">sem filtros</span>';
+    html += "</div>";
+    html += '<div style="color:var(--fraco);font-size:13px;margin-top:6px">' + esc(c.niche_description) + "</div>";
+
+    html += '<div class="numeros">';
+    html += "<div>Empresas pendentes<b>" + c.empresas.pending + "</b></div>";
+    html += "<div>Enriquecidas<b>" + c.empresas.enriched + "</b></div>";
+    html += "<div>Sem decisor<b>" + c.empresas.failed + "</b></div>";
+    for (var j = 0; j < ESTAGIOS.length; j++) {
+      html += "<div>" + ESTAGIOS[j][1] + "<b>" + c.leads[ESTAGIOS[j][0]] + "</b></div>";
+    }
+    html += "</div>";
+
+    html += '<div class="linha">';
+    for (var k = 0; k < ROTAS.length; k++) {
+      html += '<button data-acao="' + ROTAS[k].rota + '" data-id="' + esc(c.id) + '">' + ROTAS[k].nome + "</button>";
+    }
+    html += '<button data-leads="' + esc(c.id) + '">Ver leads</button>';
+    html += "</div>";
+    html += '<div id="saida-' + esc(c.id) + '"></div>';
+    html += '<div id="leads-' + esc(c.id) + '"></div>';
+    html += "</div>";
+  }
+  alvo.innerHTML = html;
+}
+
+/**
+ * As cinco rotas de lote sao lentas e caras - enriquecimento e envio gastam
+ * credito de fornecedor. O botao desabilita enquanto a chamada corre para o
+ * duplo clique nao virar duas cobrancas.
+ */
+async function dispararAcao(botao, id, rota) {
+  var saida = $("saida-" + id);
+  botao.disabled = true;
+  saida.innerHTML = "<pre>Rodando " + esc(rota) + "...</pre>";
+  try {
+    var r = await api("/campaigns/" + id + "/" + rota, { method: "POST" });
+    saida.innerHTML = "<pre>" + esc(JSON.stringify(r, null, 2)) + "</pre>";
+    await carregar();
+  } catch (e) {
+    if (e.message !== "401") saida.innerHTML = '<pre class="aviso">' + esc(e.message) + "</pre>";
+  } finally {
+    botao.disabled = false;
+  }
+}
+
+async function verLeads(id) {
+  var alvo = $("leads-" + id);
+  alvo.innerHTML = '<p class="vazio">Carregando leads...</p>';
+  var leads;
+  try {
+    leads = await api("/painel/campanhas/" + id + "/leads");
+  } catch (e) {
+    if (e.message !== "401") alvo.innerHTML = '<p class="aviso">' + esc(e.message) + "</p>";
+    return;
+  }
+
+  if (!leads.length) {
+    alvo.innerHTML = '<p class="vazio">Nenhum lead nesta campanha ainda.</p>';
+    return;
+  }
+
+  var html = '<div class="rolagem"><table><thead><tr><th>Empresa</th><th>Decisor</th>';
+  html += "<th>E-mail</th><th>Est&aacute;gio</th><th>Trocas</th><th>Atualizado</th></tr></thead><tbody>";
+  for (var i = 0; i < leads.length; i++) {
+    var l = leads[i];
+    html += '<tr data-lead="' + esc(l.id) + '">';
+    html += "<td>" + esc(l.empresa) + "</td>";
+    html += "<td>" + esc(l.full_name || "—") + "</td>";
+    html += "<td>" + esc(l.email) + "</td>";
+    html += "<td>" + esc(l.stage);
+    if (l.needs_human) html += ' <span class="etiqueta" style="color:var(--alerta)">humano</span>';
+    html += "</td>";
+    html += "<td>" + l.exchange_count + "</td>";
+    html += "<td>" + dataCurta(l.updated_at) + "</td>";
+    html += "</tr>";
+  }
+  alvo.innerHTML = html + "</tbody></table></div>";
+}
+
+async function verLead(id) {
+  var corpo = $("detalhe-corpo");
+  corpo.innerHTML = '<p class="vazio">Carregando...</p>';
+  $("detalhe").showModal();
+
+  var d;
+  try {
+    d = await api("/painel/leads/" + id);
+  } catch (e) {
+    if (e.message !== "401") corpo.innerHTML = '<p class="aviso">' + esc(e.message) + "</p>";
+    return;
+  }
+
+  var l = d.lead;
+  var html = '<h3 style="margin:0">' + esc(l.full_name || l.email) + "</h3>";
+  html += '<div style="color:var(--fraco);font-size:13px">';
+  html += esc(l.role_title || "cargo não identificado") + " &mdash; " + esc(l.email) + "</div>";
+  html += '<div class="linha" style="margin:12px 0">';
+  html += '<span class="etiqueta">' + esc(l.stage) + "</span>";
+  html += '<span class="etiqueta">' + l.exchange_count + " troca(s)</span>";
+  if (l.email_verified) html += '<span class="etiqueta" style="color:var(--ok)">e-mail verificado</span>';
+  if (l.needs_human) html += '<span class="etiqueta" style="color:var(--alerta)">precisa de humano</span>';
+  if (l.bounced_at) html += '<span class="etiqueta" style="color:var(--erro)">bounce</span>';
+  if (l.resume_at) html += '<span class="etiqueta">retomar em ' + dataCurta(l.resume_at) + "</span>";
+  html += "</div>";
+
+  if (l.handoff_reason) html += '<p class="aviso">' + esc(l.handoff_reason) + "</p>";
+  if (l.discard_reason) html += '<p class="vazio">Descartado: ' + esc(l.discard_reason) + "</p>";
+
+  html += "<h2>Conversa</h2>";
+  if (!d.conversa.length) {
+    html += '<p class="vazio">Nenhuma mensagem trocada.</p>';
+  } else {
+    for (var i = 0; i < d.conversa.length; i++) {
+      var m = d.conversa[i];
+      var ehSaida = m.direction === "outbound";
+      html += '<div class="msg ' + (ehSaida ? "saida" : "") + '">';
+      html += '<div class="quem">' + (ehSaida ? "Nós" : "Lead") + " &mdash; " + dataCurta(m.created_at);
+      if (m.shadow) html += " &mdash; sombra (não enviado)";
+      if (m.intent) html += " &mdash; " + esc(m.intent);
+      html += "</div>";
+      if (m.subject) html += "<div><strong>" + esc(m.subject) + "</strong></div>";
+      html += '<div class="corpo">' + esc(m.body) + "</div>";
+      html += "</div>";
+    }
+  }
+
+  html += "<h2>Eventos</h2>";
+  if (!d.eventos.length) {
+    html += '<p class="vazio">Nenhum evento registrado.</p>';
+  } else {
+    html += '<div class="rolagem"><table><thead><tr><th>Quando</th><th>O qu&ecirc;</th>';
+    html += "<th>Detalhe</th></tr></thead><tbody>";
+    for (var j = 0; j < d.eventos.length; j++) {
+      var ev = d.eventos[j];
+      html += "<tr><td>" + dataCurta(ev.created_at) + "</td>";
+      html += "<td>" + esc(ev.kind) + "</td>";
+      html += '<td><pre style="margin:0">';
+      html += esc(ev.payload === null ? "—" : JSON.stringify(ev.payload));
+      html += "</pre></td></tr>";
+    }
+    html += "</tbody></table></div>";
+  }
+
+  corpo.innerHTML = html;
+}
+
+async function criarCampanha() {
+  var msg = $("criar-msg");
+  var corpo = {
+    name: $("f-name").value.trim(),
+    nicheDescription: $("f-niche").value.trim(),
+    offerDescription: $("f-offer").value.trim(),
+    schedulingLink: $("f-link").value.trim(),
+    senderFirstName: $("f-sender").value.trim()
+  };
+
+  msg.className = "vazio";
+  msg.textContent = "Criando...";
+  try {
+    await api("/campaigns", { method: "POST", body: corpo });
+    msg.textContent = "Criada. Rode Gerar filtros no cartão dela.";
+    $("f-name").value = "";
+    $("f-niche").value = "";
+    $("f-offer").value = "";
+    $("f-link").value = "";
+    $("f-sender").value = "";
+    await carregar();
+  } catch (e) {
+    if (e.message !== "401") {
+      msg.className = "aviso";
+      msg.textContent = e.message;
+    }
+  }
+}
+
+/**
+ * O 401 do login e tratado aqui, e nao pelo `api`: la ele significa "sua
+ * sessao acabou, entre de novo", e aqui significa "essa senha esta errada".
+ * Mandar os dois pela mesma mensagem diria ao operador que a sessao expirou
+ * no exato momento em que ele esta tentando criar uma.
+ */
+async function entrar() {
+  var v = $("senha").value;
+  if (!v) return;
+
+  $("estado").hidden = false;
+  $("estado").className = "vazio";
+  $("estado").textContent = "Entrando...";
+
+  var res;
+  try {
+    res = await fetch("/painel/login", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ senha: v })
+    });
+  } catch (e) {
+    return mostrarEntrada("N&atilde;o foi poss&iacute;vel falar com o servidor.");
+  }
+
+  $("senha").value = "";
+
+  if (res.status === 401) return mostrarEntrada("Senha inv&aacute;lida.");
+  if (res.status === 503) {
+    return mostrarEntrada(
+      "O painel n&atilde;o tem senha configurada. Defina PAINEL_SENHA no servi&ccedil;o."
+    );
+  }
+  if (!res.ok) return mostrarEntrada("Falha no login (HTTP " + res.status + ").");
+
+  carregar();
+}
+
+async function sair() {
+  try { await fetch("/painel/sair", { method: "POST" }); } catch (e) { /* segue */ }
+  mostrarEntrada();
+}
+
+$("entrar").onclick = entrar;
+$("senha").onkeydown = function (e) { if (e.key === "Enter") entrar(); };
+$("sair").onclick = sair;
+$("recarregar").onclick = carregar;
+$("criar").onclick = criarCampanha;
+$("fechar-detalhe").onclick = function () { $("detalhe").close(); };
+
+// Delegacao: os cartoes sao redesenhados a cada recarga, e um ouvinte por
+// botao morreria junto com o innerHTML anterior.
+document.addEventListener("click", function (e) {
+  if (!e.target.closest) return;
+  var b = e.target.closest("button");
+  if (b && b.dataset.acao) return dispararAcao(b, b.dataset.id, b.dataset.acao);
+  if (b && b.dataset.leads) return verLeads(b.dataset.leads);
+  var tr = e.target.closest("tr[data-lead]");
+  if (tr) return verLead(tr.dataset.lead);
+});
+
+// Tenta carregar de cara: se o cookie da sessão anterior ainda vale, o
+// operador entra direto. Se não, o 401 cai em `mostrarEntrada` e ele vê a
+// tela de senha — sem precisar de nenhuma verificação prévia daqui.
+carregar();
+</script>
+</body>
+</html>`;

@@ -166,3 +166,25 @@ export async function definirModoDeEnvio(
     [tenantId, campaignId, modo],
   );
 }
+
+/**
+ * Lista todas as campanhas do tenant, ativas ou não.
+ *
+ * Função à parte de `listarCampanhasAtivas` de propósito: aquela existe para o
+ * n8n decidir o que disparar, e uma campanha pausada ali seria um disparo
+ * indevido. O painel é o oposto — quem olha precisa justamente ver a pausada e
+ * a arquivada, senão a campanha some da tela sem explicação no dia em que
+ * alguém a pausa.
+ */
+export async function listarCampanhas(
+  db: Db,
+  tenantId: string,
+): Promise<Campaign[]> {
+  const { rows } = await db.query<Campaign>(
+    `select ${COLUNAS} from campaigns
+     where tenant_id = $1
+     order by created_at desc`,
+    [tenantId],
+  );
+  return rows;
+}

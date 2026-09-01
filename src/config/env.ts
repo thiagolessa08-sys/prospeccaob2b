@@ -44,6 +44,17 @@ const EnvSchema = z.object({
    */
   INSTANTLY_PREMISSA_VALIDADA_EM: z.string().optional().default(""),
   N8N_SHARED_SECRET: z.string().min(1),
+  /**
+   * Senha do painel do operador. Opcional, e vazia por padrão, porque
+   * torná-la obrigatória faria todo deploy já existente parar de subir no
+   * instante em que este código chegasse ao servidor — trocando "painel
+   * indisponível" por "serviço fora do ar". Vazia, o painel recusa login com
+   * 503 e o resto da API segue funcionando.
+   *
+   * Também é a chave que assina o cookie de sessão, então vale ser longa e
+   * aleatória: trocá-la invalida todas as sessões abertas de uma vez.
+   */
+  PAINEL_SENHA: z.string().optional().default(""),
 });
 
 export type Env = z.infer<typeof EnvSchema>;

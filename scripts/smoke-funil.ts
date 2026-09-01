@@ -192,6 +192,7 @@ async function main() {
     segredoInstantly: SEGREDO_INSTANTLY,
     segredoCalcom: SEGREDO_CALCOM,
     segredoN8n: SEGREDO_N8N,
+    senhaDoPainel: "senha-do-painel",
     apiKeyHunter: CHAVES.hunter ?? "chave-stub",
     apiKeyCasaDosDados: CHAVES.casaDosDados ?? "chave-stub",
   });

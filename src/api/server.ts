@@ -3,7 +3,10 @@ import type { Db } from "../db/port.js";
 import { semSegredos } from "../config/redigir.js";
 import { tratarWebhookInstantly } from "./handlers/instantly-webhook.js";
 import { tratarWebhookCalcom } from "./handlers/calcom-webhook.js";
-import { tratarProcessarResposta } from "./handlers/processar-resposta.js";
+import {
+  tratarProcessarResposta,
+  HEADER_SEGREDO_N8N,
+} from "./handlers/processar-resposta.js";
 import { tratarEnviarLote } from "./handlers/enviar-lote.js";
 import { tratarEnriquecerLote } from "./handlers/enriquecer-lote.js";
 import { tratarDescobrirEmpresas } from "./handlers/descobrir-empresas.js";
@@ -11,6 +14,17 @@ import { tratarRetomarFollowups } from "./handlers/retomar-followups.js";
 import { tratarListarCampanhasAtivas } from "./handlers/listar-campanhas-ativas.js";
 import { tratarCriarCampanha } from "./handlers/criar-campanha.js";
 import { tratarGerarFiltros } from "./handlers/gerar-filtros.js";
+import {
+  tratarResumoDoPainel,
+  tratarLeadsDaCampanha,
+  tratarDetalheDoLead,
+} from "./handlers/painel.js";
+import { PAINEL_HTML } from "./painel-html.js";
+import {
+  tratarLoginDoPainel,
+  tratarSaidaDoPainel,
+} from "./handlers/painel-sessao.js";
+import { sessaoConfere } from "./sessao-painel.js";
 
 export interface DepsDoApp {
   db: Db;
@@ -18,6 +32,8 @@ export interface DepsDoApp {
   segredoInstantly: string;
   segredoCalcom: string;
   segredoN8n: string;
+  /** `PAINEL_SENHA`. Vazia desliga o painel sem afetar o resto da API. */
+  senhaDoPainel: string;
   apiKeyHunter: string;
   apiKeyCasaDosDados: string;
 }
@@ -30,6 +46,39 @@ export interface DepsDoApp {
  * direta — e que permitirá ao painel reexportá-los como route handlers do
  * Next.js sem nenhum adaptador.
  */
+/**
+ * Deixa a requisição do operador logado valer como requisição do n8n.
+ *
+ * As rotas de negócio conferem o header do n8n, e essa checagem mora dentro de
+ * cada handler — que é o que os torna testáveis por invocação direta, sem
+ * servidor. Ensinar cada um deles a também entender cookie significaria nove
+ * cópias da mesma regra de sessão, e a décima esquecida.
+ *
+ * Aqui a sessão é trocada pelo segredo uma vez só, na borda: quem apresenta um
+ * cookie assinado válido segue adiante como se tivesse mandado o header. Os
+ * handlers não mudam e não sabem que o painel existe.
+ *
+ * O header vindo de fora tem precedência e nunca é sobrescrito — é o n8n
+ * falando, e ele não tem cookie nenhum.
+ */
+async function comoOperador(bruta: Request, deps: DepsDoApp): Promise<Request> {
+  if (bruta.headers.get(HEADER_SEGREDO_N8N)) return bruta;
+  if (!sessaoConfere(bruta.headers.get("cookie"), deps.senhaDoPainel)) return bruta;
+
+  const headers = new Headers(bruta.headers);
+  headers.set(HEADER_SEGREDO_N8N, deps.segredoN8n);
+
+  // O corpo é lido como texto e reanexado, em vez de repassar o fluxo: o
+  // Node exige `duplex` para reencaminhar um corpo em streaming, e as rotas
+  // do painel mandam no máximo um JSON pequeno.
+  const corpo =
+    bruta.method === "GET" || bruta.method === "HEAD"
+      ? undefined
+      : await bruta.text();
+
+  return new Request(bruta.url, { method: bruta.method, headers, body: corpo });
+}
+
 export function criarApp(deps: DepsDoApp): Hono {
   const app = new Hono();
 
@@ -56,7 +105,7 @@ export function criarApp(deps: DepsDoApp): Hono {
   // indistinguível de "serviço não subiu" para quem abre a URL no navegador.
   // Não expõe dado nenhum nem a superfície da API — para isso existe o README.
   app.get("/", (c) =>
-    c.json({ servico: "prospeccao-b2b", ok: true, saude: "/saude" }),
+    c.json({ servico: "prospeccao-b2b", ok: true, saude: "/saude", painel: "/painel" }),
   );
 
   app.get("/saude", (c) => c.json({ ok: true }));
@@ -73,8 +122,8 @@ export function criarApp(deps: DepsDoApp): Hono {
 
   // O ponto de entrada do produto: cria a campanha a partir da descrição em
   // texto livre do nicho. Rota barata — só grava a linha.
-  app.post("/campaigns", (c) =>
-    tratarCriarCampanha(c.req.raw, {
+  app.post("/campaigns", async (c) =>
+    tratarCriarCampanha(await comoOperador(c.req.raw, deps), {
       db: deps.db,
       tenantId: deps.tenantId,
       segredo: deps.segredoN8n,
@@ -84,8 +133,8 @@ export function criarApp(deps: DepsDoApp): Hono {
   // Rota lenta: transforma o nicho em texto livre em filtros estruturados
   // via IA. Chamada uma vez depois de criar a campanha; pode ser repetida
   // sozinha se a IA falhar.
-  app.post("/campaigns/:id/gerar-filtros", (c) =>
-    tratarGerarFiltros(c.req.raw, c.req.param("id"), {
+  app.post("/campaigns/:id/gerar-filtros", async (c) =>
+    tratarGerarFiltros(await comoOperador(c.req.raw, deps), c.req.param("id"), {
       db: deps.db,
       tenantId: deps.tenantId,
       segredo: deps.segredoN8n,
@@ -120,8 +169,8 @@ export function criarApp(deps: DepsDoApp): Hono {
 
   // Rota lenta: dispara o disparo diário de uma campanha. O n8n agenda a
   // chamada; ela nunca acontece sozinha.
-  app.post("/campaigns/:id/enviar-lote", (c) =>
-    tratarEnviarLote(c.req.raw, c.req.param("id"), {
+  app.post("/campaigns/:id/enviar-lote", async (c) =>
+    tratarEnviarLote(await comoOperador(c.req.raw, deps), c.req.param("id"), {
       db: deps.db,
       tenantId: deps.tenantId,
       segredo: deps.segredoN8n,
@@ -129,8 +178,8 @@ export function criarApp(deps: DepsDoApp): Hono {
   );
 
   // Rota lenta: acha o decisor de cada empresa pendente. O n8n agenda.
-  app.post("/campaigns/:id/enriquecer-lote", (c) =>
-    tratarEnriquecerLote(c.req.raw, c.req.param("id"), {
+  app.post("/campaigns/:id/enriquecer-lote", async (c) =>
+    tratarEnriquecerLote(await comoOperador(c.req.raw, deps), c.req.param("id"), {
       db: deps.db,
       tenantId: deps.tenantId,
       segredo: deps.segredoN8n,
@@ -140,8 +189,8 @@ export function criarApp(deps: DepsDoApp): Hono {
 
   // Rota lenta: busca empresas novas na Casa dos Dados a partir do filtro de
   // nicho da campanha. O n8n agenda, antes do lote de enriquecimento.
-  app.post("/campaigns/:id/descobrir-empresas", (c) =>
-    tratarDescobrirEmpresas(c.req.raw, c.req.param("id"), {
+  app.post("/campaigns/:id/descobrir-empresas", async (c) =>
+    tratarDescobrirEmpresas(await comoOperador(c.req.raw, deps), c.req.param("id"), {
       db: deps.db,
       tenantId: deps.tenantId,
       segredo: deps.segredoN8n,
@@ -151,8 +200,48 @@ export function criarApp(deps: DepsDoApp): Hono {
 
   // Rota lenta: reabre contato com os leads cujo "não agora" já venceu o
   // prazo. O n8n agenda — o gatilho é o relógio, não um webhook.
-  app.post("/campaigns/:id/retomar-followups", (c) =>
-    tratarRetomarFollowups(c.req.raw, c.req.param("id"), {
+  app.post("/campaigns/:id/retomar-followups", async (c) =>
+    tratarRetomarFollowups(await comoOperador(c.req.raw, deps), c.req.param("id"), {
+      db: deps.db,
+      tenantId: deps.tenantId,
+      segredo: deps.segredoN8n,
+    }),
+  );
+
+  // A tela do operador. Aberta de propósito: é só o esqueleto HTML, sem
+  // nenhum dado dentro. Exigir sessão para servir a página a tornaria
+  // inalcançável pelo navegador, que não manda header nem tem cookie antes
+  // de existir uma tela onde fazer login. Quem exige sessão são as rotas de
+  // dados abaixo.
+  app.get("/painel", (c) => c.html(PAINEL_HTML));
+
+  // Troca a senha do operador por um cookie de sessão. Fica fora de
+  // `comoOperador` por definição: é a rota que cria a sessão, então exigir
+  // sessão aqui seria pedir a chave para entrar na sala onde a chave está.
+  app.post("/painel/login", (c) =>
+    tratarLoginDoPainel(c.req.raw, { senha: deps.senhaDoPainel }),
+  );
+
+  app.post("/painel/sair", () => tratarSaidaDoPainel());
+
+  app.get("/painel/campanhas", async (c) =>
+    tratarResumoDoPainel(await comoOperador(c.req.raw, deps), {
+      db: deps.db,
+      tenantId: deps.tenantId,
+      segredo: deps.segredoN8n,
+    }),
+  );
+
+  app.get("/painel/campanhas/:id/leads", async (c) =>
+    tratarLeadsDaCampanha(await comoOperador(c.req.raw, deps), c.req.param("id"), {
+      db: deps.db,
+      tenantId: deps.tenantId,
+      segredo: deps.segredoN8n,
+    }),
+  );
+
+  app.get("/painel/leads/:id", async (c) =>
+    tratarDetalheDoLead(await comoOperador(c.req.raw, deps), c.req.param("id"), {
       db: deps.db,
       tenantId: deps.tenantId,
       segredo: deps.segredoN8n,

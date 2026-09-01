@@ -1,0 +1,283 @@
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import {
+  subirBanco,
+  criarTenantVizinho,
+  type BancoDeTeste,
+} from "../../helpers/pg.js";
+import { criarCampanha } from "../../../src/db/repositories/campaigns.js";
+import { salvarEmpresas } from "../../../src/db/repositories/companies.js";
+import { criarLead } from "../../../src/db/repositories/leads.js";
+import { anexarMensagem } from "../../../src/db/repositories/messages.js";
+import { registrarEvento } from "../../../src/db/repositories/events.js";
+import {
+  tratarResumoDoPainel,
+  tratarLeadsDaCampanha,
+  tratarDetalheDoLead,
+} from "../../../src/api/handlers/painel.js";
+import { HEADER_SEGREDO_N8N } from "../../../src/api/handlers/processar-resposta.js";
+
+let banco: BancoDeTeste;
+
+beforeAll(async () => {
+  banco = await subirBanco();
+}, 30_000);
+
+afterAll(async () => {
+  await banco.encerrar();
+});
+
+const SEGREDO = "segredo-n8n";
+
+function requisicao(url: string, headers: Record<string, string> = {}) {
+  return new Request("http://local" + url, { headers });
+}
+
+function comSegredo(url: string) {
+  return requisicao(url, { [HEADER_SEGREDO_N8N]: SEGREDO });
+}
+
+function deps() {
+  return { db: banco.db, tenantId: banco.tenantId, segredo: SEGREDO };
+}
+
+/** Cria campanha com uma empresa e um lead, e devolve os três ids. */
+async function cenario(nome: string, cnpj: string, email: string) {
+  const campanha = await criarCampanha(banco.db, {
+    tenantId: banco.tenantId,
+    name: nome,
+    nicheDescription: "indústrias",
+    offerDescription: "BI",
+    schedulingLink: "https://cal.com/t/30min",
+    senderFirstName: "Thiago",
+  });
+
+  await salvarEmpresas(banco.db, [
+    {
+      tenantId: banco.tenantId,
+      campaignId: campanha.id,
+      cnpj,
+      legalName: "ALFA LTDA",
+      tradeName: "Alfa",
+      website: null,
+      city: null,
+      uf: null,
+      employeeCount: null,
+      summary: null,
+      source: "casa_dos_dados",
+    },
+  ]);
+
+  const { rows } = await banco.db.query<{ id: string }>(
+    `select id from companies where tenant_id = $1 and cnpj = $2`,
+    [banco.tenantId, cnpj],
+  );
+  const companyId = rows[0]!.id;
+
+  const lead = await criarLead(banco.db, {
+    tenantId: banco.tenantId,
+    campaignId: campanha.id,
+    companyId,
+    email,
+    fullName: "Maria Souza",
+    roleTitle: "Administradora",
+    emailVerified: true,
+  });
+
+  return { campanha, companyId, lead };
+}
+
+describe("tratarResumoDoPainel", () => {
+  it("recusa sem o segredo certo", async () => {
+    const res = await tratarResumoDoPainel(requisicao("/painel/campanhas"), deps());
+    expect(res.status).toBe(401);
+  });
+
+  it("conta empresas e leads da campanha", async () => {
+    const { campanha } = await cenario("Resumo", "20000000000101", "resumo@alfa.com.br");
+
+    const res = await tratarResumoDoPainel(comSegredo("/painel/campanhas"), deps());
+    expect(res.status).toBe(200);
+
+    const corpo = (await res.json()) as Array<{
+      id: string;
+      empresas: { pending: number; enriched: number; failed: number };
+      leads: Record<string, number>;
+    }>;
+    const minha = corpo.find((c) => c.id === campanha.id);
+
+    expect(minha?.empresas.pending).toBe(1);
+    expect(minha?.leads.discovered).toBe(1);
+  });
+
+  it("preenche com zero o estágio sem nenhum lead, em vez de omitir a chave", async () => {
+    // Um estágio ausente viraria `undefined` na tela, que o operador lê como
+    // "não sei" — e não como "nenhum", que é o que o banco está dizendo.
+    const { campanha } = await cenario("Zeros", "21000000000101", "zeros@alfa.com.br");
+
+    const res = await tratarResumoDoPainel(comSegredo("/painel/campanhas"), deps());
+    const corpo = (await res.json()) as Array<{ id: string; leads: Record<string, number> }>;
+    const minha = corpo.find((c) => c.id === campanha.id);
+
+    expect(minha?.leads.meeting_booked).toBe(0);
+    expect(minha?.leads.error).toBe(0);
+    expect(minha?.leads.in_conversation).toBe(0);
+  });
+
+  it("inclui campanha pausada, que a rota do n8n esconde", async () => {
+    const pausada = await criarCampanha(banco.db, {
+      tenantId: banco.tenantId,
+      name: "Pausada no painel",
+      nicheDescription: "indústrias",
+      offerDescription: "BI",
+      schedulingLink: "https://cal.com/t/30min",
+      senderFirstName: "Thiago",
+    });
+    await banco.db.query(`update campaigns set status = 'paused' where id = $1`, [
+      pausada.id,
+    ]);
+
+    const res = await tratarResumoDoPainel(comSegredo("/painel/campanhas"), deps());
+    const corpo = (await res.json()) as Array<{ id: string }>;
+
+    expect(corpo.map((c) => c.id)).toContain(pausada.id);
+  });
+
+  it("não conta empresa nem lead de outro tenant", async () => {
+    const vizinho = await criarTenantVizinho(banco.db, "0b01");
+
+    const res = await tratarResumoDoPainel(comSegredo("/painel/campanhas"), deps());
+    const corpo = (await res.json()) as Array<{ id: string }>;
+
+    expect(corpo.map((c) => c.id)).not.toContain(vizinho.campaignId);
+  });
+});
+
+describe("tratarLeadsDaCampanha", () => {
+  it("recusa sem o segredo certo", async () => {
+    const res = await tratarLeadsDaCampanha(
+      requisicao("/painel/campanhas/x/leads"),
+      banco.campaignId,
+      deps(),
+    );
+    expect(res.status).toBe(401);
+  });
+
+  it("recusa id que não é uuid, com 400 em vez de estourar no driver", async () => {
+    const res = await tratarLeadsDaCampanha(
+      comSegredo("/painel/campanhas/nao-e-uuid/leads"),
+      "nao-e-uuid",
+      deps(),
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it("devolve o lead com o nome da empresa junto", async () => {
+    const { campanha, lead } = await cenario(
+      "Com empresa",
+      "22000000000101",
+      "comempresa@alfa.com.br",
+    );
+
+    const res = await tratarLeadsDaCampanha(
+      comSegredo("/painel/campanhas/" + campanha.id + "/leads"),
+      campanha.id,
+      deps(),
+    );
+    expect(res.status).toBe(200);
+
+    const corpo = (await res.json()) as Array<{ id: string; empresa: string; email: string }>;
+    expect(corpo).toHaveLength(1);
+    expect(corpo[0]?.id).toBe(lead.id);
+    expect(corpo[0]?.empresa).toBe("Alfa");
+  });
+
+  it("respeita o limite pedido na query", async () => {
+    const { campanha, companyId } = await cenario(
+      "Limite",
+      "23000000000101",
+      "limite1@alfa.com.br",
+    );
+    await criarLead(banco.db, {
+      tenantId: banco.tenantId,
+      campaignId: campanha.id,
+      companyId,
+      email: "limite2@alfa.com.br",
+      fullName: null,
+      roleTitle: null,
+      emailVerified: false,
+    });
+
+    const res = await tratarLeadsDaCampanha(
+      comSegredo("/painel/campanhas/" + campanha.id + "/leads?limite=1"),
+      campanha.id,
+      deps(),
+    );
+    const corpo = (await res.json()) as unknown[];
+    expect(corpo).toHaveLength(1);
+  });
+});
+
+describe("tratarDetalheDoLead", () => {
+  it("recusa sem o segredo certo", async () => {
+    const res = await tratarDetalheDoLead(
+      requisicao("/painel/leads/x"),
+      "x",
+      deps(),
+    );
+    expect(res.status).toBe(401);
+  });
+
+  it("devolve 404 para lead que não existe", async () => {
+    const res = await tratarDetalheDoLead(
+      comSegredo("/painel/leads/99999999-9999-9999-9999-999999999999"),
+      "99999999-9999-9999-9999-999999999999",
+      deps(),
+    );
+    expect(res.status).toBe(404);
+  });
+
+  it("junta lead, conversa e eventos", async () => {
+    const { lead } = await cenario("Detalhe", "24000000000101", "detalhe@alfa.com.br");
+
+    await anexarMensagem(banco.db, {
+      tenantId: banco.tenantId,
+      leadId: lead.id,
+      direction: "outbound",
+      subject: "Olá",
+      body: "Primeira abordagem.",
+    });
+    await registrarEvento(banco.db, {
+      tenantId: banco.tenantId,
+      leadId: lead.id,
+      kind: "tentativa_de_enriquecimento",
+      payload: { achou: true },
+    });
+
+    const res = await tratarDetalheDoLead(
+      comSegredo("/painel/leads/" + lead.id),
+      lead.id,
+      deps(),
+    );
+    expect(res.status).toBe(200);
+
+    const corpo = (await res.json()) as {
+      lead: { id: string; email: string };
+      conversa: Array<{ body: string }>;
+      eventos: Array<{ kind: string }>;
+    };
+    expect(corpo.lead.id).toBe(lead.id);
+    expect(corpo.conversa[0]?.body).toBe("Primeira abordagem.");
+    expect(corpo.eventos[0]?.kind).toBe("tentativa_de_enriquecimento");
+  });
+
+  it("não devolve lead de outro tenant", async () => {
+    const vizinho = await criarTenantVizinho(banco.db, "0b02");
+
+    const res = await tratarDetalheDoLead(
+      comSegredo("/painel/leads/" + vizinho.leadId),
+      vizinho.leadId,
+      deps(),
+    );
+    expect(res.status).toBe(404);
+  });
+});

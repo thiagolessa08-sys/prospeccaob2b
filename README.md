@@ -37,6 +37,28 @@ rotas de lote, que o n8n agenda.
   desfecho, ou qualquer falha no meio do processamento marcam `needs_human` em
   vez de improvisar uma resposta.
 
+## Painel do operador
+
+Em `/painel`. Serve para criar campanha, disparar as rotas de lote à mão e
+acompanhar o que aconteceu — empresas descobertas, leads por estágio, a
+conversa de cada lead e a trilha de eventos.
+
+Entra com `PAINEL_SENHA` e recebe um cookie de sessão assinado (`HttpOnly`,
+`Secure`, `SameSite=Strict`, 12 h). A sessão não vive no servidor: a validade
+viaja dentro do cookie e a assinatura a torna inviolável, então um deploy do
+Railway não derruba ninguém. Para revogar todas as sessões de uma vez, troque
+`PAINEL_SENHA` — ela é a chave que assina.
+
+A senha é do operador; o `N8N_SHARED_SECRET` segue sendo só do n8n. Quem
+apresenta um cookie válido é tratado como o n8n na borda (`comoOperador`, em
+`src/api/server.ts`), o que deixa os handlers sem saber que o painel existe —
+a checagem de segredo continua dentro de cada um, e continua testável por
+invocação direta.
+
+Sem `PAINEL_SENHA` no ambiente o login devolve 503 e o resto da API segue
+funcionando. É de propósito: torná-la obrigatória faria um deploy já existente
+parar de subir no instante em que este código chegasse ao servidor.
+
 ## Rodar local
 
 ```bash
@@ -64,9 +86,11 @@ No Railway a migration roda sozinha antes do servidor (`railway.json` →
 preciso passar credencial de banco à mão. Ela sai limpa quando o schema já
 existe.
 
-Variáveis de ambiente: veja `.env.example`. Todas são exigidas no boot — o
-processo morre nomeando as que faltam, em vez de subir pela metade e falhar na
-primeira chamada de rota.
+Variáveis de ambiente: veja `.env.example`. Quase todas são exigidas no boot —
+o processo morre nomeando as que faltam, em vez de subir pela metade e falhar
+na primeira chamada de rota. As duas exceções são deliberadas:
+`INSTANTLY_PREMISSA_VALIDADA_EM` (vazia trava o envio pelo Instantly) e
+`PAINEL_SENHA` (vazia desliga só o painel).
 
 ## Estado
 
