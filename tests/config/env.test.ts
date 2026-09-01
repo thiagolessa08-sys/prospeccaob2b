@@ -25,6 +25,16 @@ describe("loadEnv", () => {
     expect(() => loadEnv(semBanco)).toThrow(/DATABASE_URL/);
   });
 
+  it("exige TENANT_ID em formato uuid, não só não-vazio", () => {
+    // A coluna tenant_id é `uuid` no Postgres: um valor fora do formato passa
+    // no boot e só explode na primeira consulta, como "invalid input syntax
+    // for type uuid" — erro que aponta para o banco quando o problema é a
+    // variável. Aconteceu em produção.
+    expect(() =>
+      loadEnv({ ...validSource, TENANT_ID: "uuid-do-tenant" }),
+    ).toThrow(/TENANT_ID/);
+  });
+
   it("lança erro quando uma variável está vazia", () => {
     expect(() => loadEnv({ ...validSource, ANTHROPIC_API_KEY: "" })).toThrow(
       /ANTHROPIC_API_KEY/,

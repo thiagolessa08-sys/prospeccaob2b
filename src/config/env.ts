@@ -1,5 +1,17 @@
 import { z } from "zod";
 
+/**
+ * O que o Postgres aceita numa coluna `uuid`: 8-4-4-4-12 em hexadecimal.
+ * Deliberadamente mais frouxo que a RFC 4122 — o banco não checa versão nem
+ * variante, e validar mais que ele só cria falso negativo no boot.
+ *
+ * Exportado porque `src/db/migrar.ts` valida o mesmo TENANT_ID sem passar por
+ * `env()` (ele roda sozinho, antes do servidor, e não precisa das outras
+ * variáveis). Duas cópias da regra divergiriam.
+ */
+export const UUID_DO_POSTGRES =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 const EnvSchema = z.object({
   ANTHROPIC_API_KEY: z.string().min(1),
   /** Connection string do Postgres. É por aqui que TODA a persistência passa. */
@@ -8,7 +20,20 @@ const EnvSchema = z.object({
   CASA_DOS_DADOS_API_KEY: z.string().min(1),
   INSTANTLY_API_KEY: z.string().min(1),
   INSTANTLY_CAMPAIGN_ID: z.string().min(1),
-  TENANT_ID: z.string().min(1),
+  /**
+   * Formato validado no boot, e não só `min(1)`: a coluna `tenant_id` é
+   * `uuid` no Postgres, então um valor fora do formato passa no boot e só
+   * explode na primeira consulta, como `invalid input syntax for type uuid` —
+   * erro que aponta para o banco quando o problema é a variável de ambiente.
+   *
+   * Regex em vez de `z.uuid()` de propósito: o zod exige conformidade com a
+   * RFC 4122 (dígitos de versão e variante), que o Postgres NÃO exige.
+   * Validar mais que o banco recusaria no boot um id que funcionaria bem —
+   * `11111111-1111-1111-1111-111111111111`, por exemplo, que os testes usam.
+   */
+  TENANT_ID: z
+    .string()
+    .regex(UUID_DO_POSTGRES, "TENANT_ID precisa ter o formato 8-4-4-4-12 em hexadecimal"),
   INSTANTLY_WEBHOOK_SECRET: z.string().min(1),
   CALCOM_WEBHOOK_SECRET: z.string().min(1),
   /**

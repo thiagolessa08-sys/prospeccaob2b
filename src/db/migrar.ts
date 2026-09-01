@@ -23,6 +23,7 @@ import pg from "pg";
 import { readFileSync } from "node:fs";
 import { CAMINHO_DA_MIGRATION } from "./caminho-migration.js";
 import { semSegredos } from "../config/redigir.js";
+import { UUID_DO_POSTGRES } from "../config/env.js";
 
 const MIGRATION = CAMINHO_DA_MIGRATION;
 
@@ -78,6 +79,23 @@ try {
   process.exit(1);
 }
 
+/**
+ * Também antes de conectar, pelo mesmo motivo: um TENANT_ID fora do formato
+ * uuid não tem conserto do lado do banco, e descobrir isso depois de abrir
+ * conexão só atrasa a mensagem que resolve o problema.
+ */
+const tenantId = process.env.TENANT_ID?.trim();
+if (!tenantId) {
+  console.error("TENANT_ID não definida — sem ela não há tenant para criar.");
+  process.exit(1);
+}
+if (!UUID_DO_POSTGRES.test(tenantId)) {
+  console.error(
+    `TENANT_ID não é um UUID válido: "${tenantId}". A coluna tenant_id é uuid no Postgres.`,
+  );
+  process.exit(1);
+}
+
 console.log(`Conectando em ${alvo.hostname}:${alvo.port || 5432}${alvo.pathname}`);
 const cliente = new pg.Client({ connectionString: url });
 
@@ -87,18 +105,33 @@ try {
   const { rows } = await cliente.query<{ existe: boolean }>(
     `select to_regclass('public.tenants') is not null as existe`,
   );
+
   if (rows[0]?.existe) {
-    console.log("Schema já aplicado (tabela `tenants` existe). Nada a fazer.");
-    process.exit(0);
+    console.log("Schema já aplicado (tabela `tenants` existe).");
+  } else {
+    await cliente.query(sql);
+    const { rows: tabelas } = await cliente.query<{ nome: string }>(
+      `select tablename as nome from pg_tables where schemaname = 'public' order by tablename`,
+    );
+    console.log(`Schema aplicado. Tabelas: ${tabelas.map((t) => t.nome).join(", ")}`);
   }
 
-  await cliente.query(sql);
-  console.log("Schema aplicado.");
-
-  const { rows: tabelas } = await cliente.query<{ nome: string }>(
-    `select tablename as nome from pg_tables where schemaname = 'public' order by tablename`,
+  /**
+   * Cria a linha do tenant, sempre — inclusive quando o schema já existia.
+   *
+   * O schema cria as tabelas mas não popula nenhuma, e `campaigns.tenant_id`
+   * referencia `tenants(id)`. Sem esta linha, um deploy novo sobe inteiro e
+   * só falha em `POST /campaigns`, com violação de chave estrangeira: o
+   * TENANT_ID do ambiente aponta para um tenant que não existe. Fica fora do
+   * .sql porque o id vem do ambiente, não do schema.
+   */
+  const { rowCount } = await cliente.query(
+    `insert into tenants (id, name) values ($1, $2) on conflict (id) do nothing`,
+    [tenantId, "Tenant principal"],
   );
-  console.log(`Tabelas: ${tabelas.map((t) => t.nome).join(", ")}`);
+  console.log(
+    rowCount ? `Tenant ${tenantId} criado.` : `Tenant ${tenantId} já existia.`,
+  );
 } catch (erro) {
   const bruto = erro instanceof Error ? erro.message : String(erro);
   console.error(`Falhou: ${semSegredos(bruto)}`);
