@@ -45,7 +45,16 @@ export type ResultadoEnriquecimento =
   | { achou: false; motivo: string; tentativas: readonly TentativaDeFonte[] };
 
 export interface EntradaEnriquecimento {
-  cnpj: string;
+  /**
+   * Nulo quando a empresa não veio da Receita.
+   *
+   * A descoberta pela Lusha entrega empresa do grafo dela — id próprio e
+   * domínio, sem CNPJ. Antes isto era descartado no lote, o que tornava a
+   * descoberta pela Lusha impossível de usar.
+   */
+  cnpj: string | null;
+  /** Razão social ou nome fantasia. Único localizador quando não há CNPJ. */
+  nomeDaEmpresa: string;
   dominio: string | null;
   apiKey: string;
   alvo: AlvoDaCampanha;
@@ -91,29 +100,68 @@ export async function enriquecerDecisor(
   const tentativas: TentativaDeFonte[] = [];
 
   let empresa: DadosDaEmpresa | null;
-  try {
-    empresa = await deps.buscarEmpresa(entrada.cnpj);
-  } catch (erro) {
+
+  if (!entrada.cnpj) {
+    /**
+     * Empresa sem CNPJ: veio da Lusha, não da Receita.
+     *
+     * Não há o que consultar na BrasilAPI, então monta-se o mínimo que a
+     * cadeia usa daqui para frente. O que se perde está declarado: sem
+     * `socios` o caminho do quadro societário não roda, sem `email` o e-mail
+     * declarado à Receita não existe, e `ativa: true` é uma suposição — não
+     * há situação cadastral para conferir, e é justamente a trava que evita
+     * gastar crédito com empresa baixada.
+     *
+     * A tentativa é registrada como `vazio` para essa perda aparecer no
+     * diagnóstico, em vez de sumir.
+     */
     tentativas.push({
       fonte: "cnpj_qsa",
-      resultado: "erro",
-      detalhe: erro instanceof Error ? erro.message : String(erro),
+      resultado: "vazio",
+      detalhe: "empresa sem CNPJ: sem Receita, sem sócios e sem situação cadastral",
     });
-    return { achou: false, motivo: "Falha ao consultar o CNPJ.", tentativas };
-  }
+    empresa = {
+      cnpj: "",
+      razaoSocial: entrada.nomeDaEmpresa,
+      nomeFantasia: null,
+      cnaePrincipal: "",
+      descricaoCnae: "",
+      uf: null,
+      municipio: null,
+      porte: null,
+      ativa: true,
+      email: null,
+      telefone: null,
+      socios: [],
+    };
+  } else {
+    try {
+      empresa = await deps.buscarEmpresa(entrada.cnpj);
+    } catch (erro) {
+      tentativas.push({
+        fonte: "cnpj_qsa",
+        resultado: "erro",
+        detalhe: erro instanceof Error ? erro.message : String(erro),
+      });
+      return { achou: false, motivo: "Falha ao consultar o CNPJ.", tentativas };
+    }
 
-  if (!empresa) {
-    tentativas.push({ fonte: "cnpj_qsa", resultado: "vazio" });
-    return { achou: false, motivo: "Empresa não encontrada pelo CNPJ.", tentativas };
-  }
+    if (!empresa) {
+      tentativas.push({ fonte: "cnpj_qsa", resultado: "vazio" });
+      return { achou: false, motivo: "Empresa não encontrada pelo CNPJ.", tentativas };
+    }
 
-  // Empresa baixada, suspensa ou inapta não recebe prospecção — e checar isso
-  // antes de qualquer chamada paga evita queimar crédito à toa.
-  if (!empresa.ativa) {
-    tentativas.push({ fonte: "cnpj_qsa", resultado: "vazio", detalhe: "situação cadastral não é ATIVA" });
-    return { achou: false, motivo: "Empresa com situação cadastral inativa.", tentativas };
+    // Empresa baixada, suspensa ou inapta não recebe prospecção — e checar
+    // isso antes de qualquer chamada paga evita queimar crédito à toa.
+    if (!empresa.ativa) {
+      tentativas.push({
+        fonte: "cnpj_qsa",
+        resultado: "vazio",
+        detalhe: "situação cadastral não é ATIVA",
+      });
+      return { achou: false, motivo: "Empresa com situação cadastral inativa.", tentativas };
+    }
   }
-
   // 1. E-mail do próprio registro da Receita, se for de pessoa.
   if (empresa.email) {
     if (ehEmailGenerico(empresa.email)) {

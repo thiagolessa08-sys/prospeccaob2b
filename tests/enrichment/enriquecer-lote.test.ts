@@ -240,7 +240,11 @@ describe("enriquecerLote — falhas", () => {
     expect(rows[0]?.enrichment_status).toBe("failed");
   });
 
-  it("marca como failed uma empresa sem CNPJ, sem gastar chamada nenhuma", async () => {
+  it("empresa sem CNPJ segue o funil, pulando a Receita", async () => {
+    // Mudou de comportamento: antes era descartada. A descoberta pela Lusha
+    // entrega empresa sem CNPJ, e descartá-la tornava aquela fonte inútil.
+    // A BrasilAPI continua não sendo chamada — não há CNPJ para consultar —,
+    // mas a busca do decisor roda normalmente.
     const campanha = await criarCampanha(banco.db, {
       tenantId: banco.tenantId,
       ...base,
@@ -253,12 +257,12 @@ describe("enriquecerLote — falhas", () => {
         cnpj: null,
         legalName: "Empresa sem CNPJ",
         tradeName: null,
-        website: null,
+        website: "https://semcnpj.com.br",
         city: null,
         uf: null,
         employeeCount: null,
         summary: null,
-        source: "maps",
+        source: "lusha",
       },
     ]);
 
@@ -273,8 +277,11 @@ describe("enriquecerLote — falhas", () => {
       deps,
     );
 
-    expect(resultado.falhas).toBe(1);
+    expect(resultado.processadas).toBe(1);
     expect(deps.buscarEmpresa).not.toHaveBeenCalled();
+    // Sem sócios (não há Receita), o alvo `socio_ou_dono` não tem nome para
+    // procurar e a cadeia cai na busca por domínio.
+    expect(deps.buscarDominio).toHaveBeenCalled();
   });
 
   it("continua para a próxima empresa quando uma lança no meio do lote", async () => {

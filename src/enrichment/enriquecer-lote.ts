@@ -97,26 +97,13 @@ export async function enriquecerLote(
 
   for (const empresa of pendentes) {
     try {
-      if (!empresa.cnpj) {
-        // Sem CNPJ não há como consultar o quadro societário nem a situação
-        // cadastral — a cadeia inteira depende dele. Descartada, não perdida
-        // em silêncio: o motivo fica em `events`.
-        await marcarEnriquecimento(db, tenantId, empresa.id, "failed");
-        await registrarEvento(db, {
-          tenantId,
-          leadId: null,
-          kind: "empresa_sem_cnpj",
-          payload: { companyId: empresa.id },
-        });
-        contar(motivos, "Empresa sem CNPJ salvo.");
-        contar(porFonte, "sem cnpj");
-        falhas += 1;
-        continue;
-      }
-
       const resultado = await enriquecerDecisor(
         {
           cnpj: empresa.cnpj,
+          nomeDaEmpresa: empresa.trade_name?.trim() || empresa.legal_name.trim(),
+          // O site cadastrado quando existe. Empresa vinda da Lusha traz
+          // domínio aqui; empresa da Receita chega sem, e a cadeia deriva do
+          // e-mail declarado ou cai na razão social.
           dominio: dominioDoSite(empresa.website),
           apiKey,
           alvo,
