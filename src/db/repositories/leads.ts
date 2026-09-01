@@ -214,6 +214,52 @@ export async function listarProntosParaContato(
 }
 
 /**
+ * Leads que disseram "não agora" e cujo prazo combinado já venceu.
+ *
+ * `needs_human = false` porque um repasse a humano, mesmo com `resume_at`
+ * ainda gravado de uma rodada anterior, não deve ser retomado pela
+ * automação sozinha — a mesma trava que `decideNextAction` já aplica a
+ * qualquer resposta nova.
+ */
+export async function listarProntosParaRetomar(
+  db: Db,
+  tenantId: string,
+  campaignId: string,
+  limite: number,
+): Promise<Lead[]> {
+  const { rows } = await db.query<Lead>(
+    `select ${COLUNAS} from leads
+     where tenant_id = $1 and campaign_id = $2
+       and stage = 'in_conversation' and needs_human = false
+       and resume_at is not null and resume_at <= now()
+     order by resume_at
+     limit $3`,
+    [tenantId, campaignId, limite],
+  );
+  return rows;
+}
+
+/**
+ * Zera `resume_at` depois que o follow-up agendado foi enviado.
+ *
+ * Função à parte de `atualizarLead`: lá, `resume_at = coalesce($5,
+ * resume_at)` nunca consegue voltar a `null` — é assim que evita apagar um
+ * prazo sem querer quando outro campo do mesmo update não mexe nele. Aqui é
+ * o oposto: sem apagar, a próxima varredura de `listarProntosParaRetomar`
+ * acharia o mesmo lead de novo e reenviaria o follow-up para sempre.
+ */
+export async function limparRetomada(
+  db: Db,
+  tenantId: string,
+  id: string,
+): Promise<void> {
+  await db.query(`update leads set resume_at = null where tenant_id = $1 and id = $2`, [
+    tenantId,
+    id,
+  ]);
+}
+
+/**
  * Busca pelo endereço, normalizando como o índice único faz.
  *
  * `leads_tenant_email_uniq` é `(tenant_id, lower(email))`, então a busca usa

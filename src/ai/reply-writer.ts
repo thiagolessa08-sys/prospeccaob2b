@@ -14,8 +14,13 @@ export interface ConversationTurn {
 
 /**
  * Só depende da campanha — prefixo cacheado, igual para todas as réplicas.
+ *
+ * Exportada porque `writeFollowupNudge`, abaixo, escreve para o mesmo lead
+ * sob as mesmas regras invioláveis (limite de palavras, sem preço, aviso de
+ * descadastro, assinatura só com o primeiro nome) — duplicar o texto aqui
+ * arriscaria as duas cópias divergirem com o tempo.
  */
-function buildSystem(voice: CampaignVoice): string {
+export function buildSystem(voice: CampaignVoice): string {
   return `Você responde, em português brasileiro, a leads que reagiram a um e-mail de prospecção B2B.
 
 O que oferecemos:
@@ -114,6 +119,59 @@ export async function writeReply(
   if (!resposta.parsed_output) {
     throw new Error(
       `O modelo não devolveu saída estruturada para a réplica (stop_reason=${resposta.stop_reason}).`,
+    );
+  }
+  return resposta.parsed_output;
+}
+
+/**
+ * Escreve o e-mail de retomada, quando o prazo de um "não agora" vence.
+ *
+ * Diferente de `writeReply`, não nasce de uma resposta nova do lead — é a
+ * automação que volta a falar por conta própria, no prazo que ela mesma
+ * prometeu. Por isso vive fora de `NextAction`/`decideNextAction`: aquela
+ * união modela reações a uma resposta classificada, e esta escrita não reage
+ * a nada, só cumpre um compromisso já registrado em `leads.resume_at`.
+ */
+export async function writeFollowupNudge(
+  input: {
+    voice: CampaignVoice;
+    schedulingLink: string;
+    history: ConversationTurn[];
+  },
+  deps: AiDeps = { client: getClient() },
+): Promise<EmailDraft> {
+  if (input.history.length === 0) {
+    throw new Error("Não é possível retomar contato sem histórico da conversa.");
+  }
+
+  const tarefa = `Chegou o prazo que você combinou com o lead para retomar contato depois de ele dizer que não era o momento. Retome com uma frase curta lembrando o combinado, sem soar como cobrança nem repetir a oferta inteira, e convide para marcar um horário neste link: ${input.schedulingLink}`;
+
+  const resposta = await deps.client.messages.parse({
+    model: MODEL,
+    max_tokens: 4096,
+    system: [
+      {
+        type: "text",
+        text: buildSystem(input.voice),
+        cache_control: { type: "ephemeral" },
+      },
+    ],
+    output_config: {
+      format: zodOutputFormat(EmailDraftSchema),
+      effort: "medium",
+    },
+    messages: [
+      {
+        role: "user",
+        content: `Conversa até aqui:\n\n${transcrever(input.history)}\n\nSua tarefa: ${tarefa}`,
+      },
+    ],
+  });
+
+  if (!resposta.parsed_output) {
+    throw new Error(
+      `O modelo não devolveu saída estruturada para o follow-up (stop_reason=${resposta.stop_reason}).`,
     );
   }
   return resposta.parsed_output;

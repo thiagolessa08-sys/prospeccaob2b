@@ -14,6 +14,8 @@ import {
   transicionarLead,
   incrementarTrocas,
   listarProntosParaContato,
+  listarProntosParaRetomar,
+  limparRetomada,
 } from "../../../src/db/repositories/leads.js";
 import type { Db } from "../../../src/db/port.js";
 
@@ -375,5 +377,115 @@ describe("atualizarLead", () => {
 
     const relido = await buscarLead(banco.db, banco.tenantId, lead.id);
     expect(relido?.needs_human).toBe(false);
+  });
+});
+
+/** Lead em conversa, pronto para os testes de retomada de follow-up. */
+async function leadEmConversa() {
+  const lead = await criarLead(banco.db, novoLead());
+  await transicionarLead(banco.db, banco.tenantId, lead.id, "contacted");
+  return transicionarLead(banco.db, banco.tenantId, lead.id, "in_conversation");
+}
+
+const UM_DIA_MS = 24 * 60 * 60 * 1000;
+
+describe("listarProntosParaRetomar", () => {
+  it("acha lead com resume_at vencido", async () => {
+    const lead = await leadEmConversa();
+    await atualizarLead(banco.db, banco.tenantId, lead.id, {
+      resumeAt: new Date(Date.now() - UM_DIA_MS),
+    });
+
+    const prontos = await listarProntosParaRetomar(
+      banco.db,
+      banco.tenantId,
+      lead.campaign_id,
+      10,
+    );
+    expect(prontos.map((l) => l.id)).toContain(lead.id);
+  });
+
+  it("ignora lead com resume_at no futuro", async () => {
+    const lead = await leadEmConversa();
+    await atualizarLead(banco.db, banco.tenantId, lead.id, {
+      resumeAt: new Date(Date.now() + UM_DIA_MS),
+    });
+
+    const prontos = await listarProntosParaRetomar(
+      banco.db,
+      banco.tenantId,
+      lead.campaign_id,
+      10,
+    );
+    expect(prontos.map((l) => l.id)).not.toContain(lead.id);
+  });
+
+  it("ignora lead sem resume_at", async () => {
+    const lead = await leadEmConversa();
+    const prontos = await listarProntosParaRetomar(
+      banco.db,
+      banco.tenantId,
+      lead.campaign_id,
+      10,
+    );
+    expect(prontos.map((l) => l.id)).not.toContain(lead.id);
+  });
+
+  it("ignora lead repassado a humano, mesmo com retomada vencida", async () => {
+    const lead = await leadEmConversa();
+    await atualizarLead(banco.db, banco.tenantId, lead.id, {
+      resumeAt: new Date(Date.now() - UM_DIA_MS),
+      needsHuman: true,
+    });
+
+    const prontos = await listarProntosParaRetomar(
+      banco.db,
+      banco.tenantId,
+      lead.campaign_id,
+      10,
+    );
+    expect(prontos.map((l) => l.id)).not.toContain(lead.id);
+  });
+
+  it("ignora lead fora de in_conversation", async () => {
+    const lead = await criarLead(banco.db, novoLead());
+    await atualizarLead(banco.db, banco.tenantId, lead.id, {
+      resumeAt: new Date(Date.now() - UM_DIA_MS),
+    });
+
+    const prontos = await listarProntosParaRetomar(
+      banco.db,
+      banco.tenantId,
+      lead.campaign_id,
+      10,
+    );
+    expect(prontos.map((l) => l.id)).not.toContain(lead.id);
+  });
+});
+
+describe("limparRetomada", () => {
+  it("zera o resume_at", async () => {
+    const lead = await leadEmConversa();
+    await atualizarLead(banco.db, banco.tenantId, lead.id, {
+      resumeAt: new Date(Date.now() - UM_DIA_MS),
+    });
+
+    await limparRetomada(banco.db, banco.tenantId, lead.id);
+
+    const relido = await buscarLead(banco.db, banco.tenantId, lead.id);
+    expect(relido?.resume_at).toBeNull();
+  });
+
+  it("não afeta lead de outro tenant", async () => {
+    const lead = await leadEmConversa();
+    await atualizarLead(banco.db, banco.tenantId, lead.id, {
+      resumeAt: new Date(Date.now() - UM_DIA_MS),
+    });
+    const vizinho = await criarTenantVizinho(banco.db, "0aa2");
+
+    await limparRetomada(banco.db, vizinho.tenantId, lead.id);
+
+    const relido = await buscarLead(banco.db, banco.tenantId, lead.id);
+    expect(relido?.resume_at).not.toBeNull();
   });
 });

@@ -1,5 +1,9 @@
 import { describe, it, expect, vi } from "vitest";
-import { writeReply, type ConversationTurn } from "../../src/ai/reply-writer.js";
+import {
+  writeReply,
+  writeFollowupNudge,
+  type ConversationTurn,
+} from "../../src/ai/reply-writer.js";
 import { depsComParse } from "../helpers/ai-mock.js";
 
 const RASCUNHO = { subject: "Re: proposta", body: "Claro, segue o link..." };
@@ -219,6 +223,66 @@ describe("writeReply", () => {
           history: HISTORICO,
           action: { type: "send_scheduling_link" },
         },
+        depsComParse(parse),
+      ),
+    ).rejects.toThrow(/saída estruturada/);
+  });
+});
+
+describe("writeFollowupNudge", () => {
+  it("devolve o rascunho retornado pelo modelo", async () => {
+    const parse = parseOk();
+    const resultado = await writeFollowupNudge(
+      { voice: VOZ, schedulingLink: LINK, history: HISTORICO },
+      depsComParse(parse),
+    );
+    expect(resultado).toEqual(RASCUNHO);
+  });
+
+  it("inclui o link de agendamento e o mesmo tom da campanha", async () => {
+    const parse = parseOk();
+    await writeFollowupNudge(
+      { voice: VOZ, schedulingLink: LINK, history: HISTORICO },
+      depsComParse(parse),
+    );
+    const conteudo = parse.mock.calls[0]![0].messages[0].content as string;
+    expect(conteudo).toContain(LINK);
+
+    const system = parse.mock.calls[0]![0].system[0];
+    expect(system.text).toContain("consultivo, direto, sem jargão");
+    expect(system.text).toContain("Thiago");
+    expect(system.text).toMatch(/não receber mais/i);
+  });
+
+  it("transcreve o histórico identificando quem falou", async () => {
+    const parse = parseOk();
+    await writeFollowupNudge(
+      { voice: VOZ, schedulingLink: LINK, history: HISTORICO },
+      depsComParse(parse),
+    );
+    const conteudo = parse.mock.calls[0]![0].messages[0].content as string;
+    expect(conteudo).toContain("Nós: Olá Maria, vi que a Alfa...");
+    expect(conteudo).toContain("Lead: Interessante. Quanto custa?");
+  });
+
+  it("exige histórico não vazio", async () => {
+    const parse = vi.fn();
+    await expect(
+      writeFollowupNudge(
+        { voice: VOZ, schedulingLink: LINK, history: [] },
+        depsComParse(parse),
+      ),
+    ).rejects.toThrow(/histórico/i);
+    expect(parse).not.toHaveBeenCalled();
+  });
+
+  it("lança erro quando o modelo não devolve saída estruturada", async () => {
+    const parse = vi
+      .fn()
+      .mockResolvedValue({ parsed_output: null, stop_reason: "refusal" });
+    await expect(
+      writeFollowupNudge(
+        { voice: VOZ, schedulingLink: LINK, history: HISTORICO },
         depsComParse(parse),
       ),
     ).rejects.toThrow(/saída estruturada/);

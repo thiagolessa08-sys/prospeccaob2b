@@ -6,6 +6,7 @@ import { tratarProcessarResposta } from "./handlers/processar-resposta.js";
 import { tratarEnviarLote } from "./handlers/enviar-lote.js";
 import { tratarEnriquecerLote } from "./handlers/enriquecer-lote.js";
 import { tratarDescobrirEmpresas } from "./handlers/descobrir-empresas.js";
+import { tratarRetomarFollowups } from "./handlers/retomar-followups.js";
 
 export interface DepsDoApp {
   db: Db;
@@ -84,6 +85,16 @@ export function criarApp(deps: DepsDoApp): Hono {
       tenantId: deps.tenantId,
       segredo: deps.segredoN8n,
       apiKeyCasaDosDados: deps.apiKeyCasaDosDados,
+    }),
+  );
+
+  // Rota lenta: reabre contato com os leads cujo "não agora" já venceu o
+  // prazo. O n8n agenda — o gatilho é o relógio, não um webhook.
+  app.post("/campaigns/:id/retomar-followups", (c) =>
+    tratarRetomarFollowups(c.req.raw, c.req.param("id"), {
+      db: deps.db,
+      tenantId: deps.tenantId,
+      segredo: deps.segredoN8n,
     }),
   );
 
