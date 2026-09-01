@@ -65,13 +65,33 @@ que o funil usa para recusar empresa inativa antes de gastar crédito.
 Cada tentativa grava em `events` qual fornecedor a produziu, que é o que
 permite comparar acerto e custo entre os dois.
 
-⚠️ **O adaptador da Lusha não foi verificado contra a API ao vivo.** A
-documentação dela é uma SPA e não entrega os schemas de requisição e resposta;
-o código foi escrito a partir do que a documentação descreve em texto
-(endpoints, header `api_key`, filtros, fluxo em duas etapas). A leitura da
-resposta aceita mais de um nome plausível por campo e, quando não reconhece
-nada, **lança** em vez de devolver lista vazia — para "campo renomeado" não se
-disfarçar de "empresa sem decisor". O erro fica em `events`.
+### Como a Lusha é usada (API V3)
+
+| O que a cadeia pede | Endpoint | Cobrança |
+|---|---|---|
+| achar pessoa conhecida na empresa | `POST /v3/contacts/search-and-enrich` | busca + revelação |
+| achar quem tem o cargo | `POST /v3/contacts/prospecting` → `POST /v3/contacts/enrich` | busca por resultado, revelação por e-mail |
+
+Autentica pelo header `api_key`. Só `emails` é revelado: telefone é outro
+crédito por contato, e o funil inteiro é de e-mail.
+
+O cargo-alvo vai como `jobTitles`, **não** como `departments`. O filtro de
+departamento da Lusha é lista fechada, alimentada por
+`/v3/contacts/prospecting/filters/departments`; o cargo da campanha é texto
+livre em português e seria recusado ali.
+
+Dois códigos de erro têm significado de negócio e são tratados à parte:
+`451` (contato bloqueado por GDPR) vira "não temos este contato" em vez de
+falha — encheria `events` de erros que ninguém pode consertar; `402` vira uma
+mensagem dizendo que faltou crédito, senão o operador lê "HTTP 402" e vai
+procurar defeito no código.
+
+⚠️ **Os nomes dos campos da resposta não foram confirmados ao vivo.** Os
+endpoints, a autenticação e o fluxo vêm da documentação oficial da V3; o que
+ela descreve em texto, e não em schema, é o formato exato de cada resultado.
+Por isso a leitura aceita mais de um nome plausível por campo e, quando não
+reconhece nada, **lança** em vez de devolver lista vazia — para "campo
+renomeado" não se disfarçar de "empresa sem decisor". O erro fica em `events`.
 
 ## Travas de segurança
 

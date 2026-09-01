@@ -1,27 +1,42 @@
-import { fetchJson, type FetchLike } from "../http/fetch-json.js";
+import { fetchJson, HttpError, type FetchLike } from "../http/fetch-json.js";
 import type { CandidatoDecisor, StatusVerificacao } from "./types.js";
 
 /**
- * Adaptador da Lusha, no lugar da Hunter para achar o decisor.
+ * Adaptador da Lusha (API V3), no lugar da Hunter para achar o decisor.
  *
  * A Casa dos Dados continua descobrindo as empresas: ela vem da Receita e
  * traz CNPJ, CNAE e situação cadastral, que a Lusha não tem e que o funil usa
  * para recusar empresa inativa antes de gastar crédito.
  *
- * ATENÇÃO — contrato não verificado ao vivo. A documentação da Lusha é uma
- * SPA e não entrega os schemas de requisição e resposta a quem não executa
- * JavaScript, então o que está aqui foi escrito a partir do que a
- * documentação descreve em texto: os endpoints, o header `api_key`, os
- * filtros e o fluxo em duas etapas. A leitura da resposta é deliberadamente
- * defensiva — aceita mais de um nome plausível por campo — e, quando não
+ * Dois caminhos, espelhando o que a cadeia já pedia da Hunter:
+ *
+ * - achar uma pessoa conhecida → `/contacts/search-and-enrich`, que aceita
+ *   `firstName` + `lastName` + `companyDomain` como identificador e revela o
+ *   e-mail na mesma chamada. É o equivalente do email-finder.
+ * - achar quem tem o cargo → `/contacts/prospecting` (filtro por cargo,
+ *   senioridade e domínio da empresa) e depois `/contacts/enrich` com os ids.
+ *   É o equivalente do domain-search.
+ *
+ * A busca por filtro devolve prévia sem PII: e-mail só sai do enriquecimento,
+ * e é lá que o crédito de `revealEmail` é consumido. Fazer as duas etapas aqui
+ * dentro mantém a cadeia sem saber disso — para ela, isto é "ache o decisor".
+ *
+ * O que continua não verificado ao vivo são os NOMES DOS CAMPOS da resposta:
+ * a documentação descreve o que cada endpoint devolve, não o schema exato.
+ * Por isso a leitura aceita mais de um nome plausível por campo e, quando não
  * reconhece nada, lança com um resumo da forma recebida em vez de devolver
- * lista vazia. Um erro assim vira `resultado: "erro"` em `tentativas` e fica
- * gravado em `events`, que é onde se lê o que a API realmente respondeu.
+ * lista vazia — lista vazia é indistinguível de "empresa sem decisor".
  */
-const BASE = "https://api.lusha.com";
+const BASE = "https://api.lusha.com/v3";
 
 /** Quantos contatos pedir por empresa. Além disso é ruído para revisar. */
 const POR_EMPRESA = 10;
+
+/**
+ * Só o e-mail é revelado. Telefone é outro crédito por contato, e o funil
+ * inteiro é de e-mail — não há para onde discar.
+ */
+const REVELAR = ["emails"];
 
 interface Chamada {
   apiKey: string;
@@ -38,8 +53,36 @@ async function postar<T>(
     metodo: "POST",
     headers: { api_key: apiKey, "content-type": "application/json" },
     corpo: JSON.stringify(corpo),
+    // 429 e 5xx já são repetidos pelo `fetchJson`. 402 (sem crédito) e 401
+    // (chave inválida) não são: repetir não conserta e só queima quota.
     tentativas: 3,
   });
+}
+
+/** Sem crédito. Merece mensagem própria — some no meio de um 4xx genérico. */
+const SEM_CREDITO = 402;
+/** Contato bloqueado por GDPR. Não é falha nossa nem da chave. */
+const BLOQUEADO_POR_LEI = 451;
+
+/**
+ * Traduz os erros que têm significado de negócio.
+ *
+ * `451` vira lista vazia: a Lusha achou a pessoa e a lei impede de entregá-la.
+ * Isso é "não temos este contato", não "a integração quebrou" — tratar como
+ * erro encheria `events` de falhas que ninguém pode consertar.
+ *
+ * `402` continua sendo erro, mas com o texto certo: sem esta tradução, o
+ * operador leria `HTTP 402` e iria procurar defeito no código em vez de
+ * comprar crédito.
+ */
+function traduzirErro(erro: unknown): never | [] {
+  if (erro instanceof HttpError && erro.status === BLOQUEADO_POR_LEI) return [];
+  if (erro instanceof HttpError && erro.status === SEM_CREDITO) {
+    throw new Error(
+      "Lusha recusou por falta de crédito (HTTP 402). O enriquecimento para até a conta ser recarregada.",
+    );
+  }
+  throw erro;
 }
 
 /**
@@ -77,7 +120,7 @@ function objetos(valor: unknown): Record<string, unknown>[] {
 function listaDeResultados(resposta: unknown): Record<string, unknown>[] {
   if (typeof resposta !== "object" || resposta === null) return [];
   const r = resposta as Record<string, unknown>;
-  for (const nome of ["results", "data", "contacts"]) {
+  for (const nome of ["data", "contacts", "results"]) {
     const lista = objetos(r[nome]);
     if (lista.length > 0) return lista;
   }
@@ -113,65 +156,24 @@ function traduzirStatus(bruto: unknown): StatusVerificacao {
   }
 }
 
-/** Lê um campo de qualquer resposta, sem afirmar a forma dela antes da hora. */
-function campoDe(resposta: unknown, nome: string): string | null {
-  if (typeof resposta !== "object" || resposta === null) return null;
-  return texto(resposta as Record<string, unknown>, nome);
-}
-
-/**
- * Busca contatos e revela os e-mails.
- *
- * Duas etapas porque a Lusha cobra na segunda: a busca devolve identificadores
- * sem e-mail, e só o enriquecimento revela o endereço consumindo crédito.
- * Fazer as duas aqui dentro mantém a cadeia sem saber disso — para ela, isto
- * continua sendo "ache o decisor".
- */
-async function buscarEEnriquecer(
-  filtros: Record<string, unknown>,
-  chamada: Chamada,
-): Promise<Record<string, unknown>[]> {
-  const busca = await postar<unknown>(
-    "/prospecting/contact/search",
-    { pages: { page: 0, size: POR_EMPRESA }, filters: filtros },
-    chamada,
-  );
-
-  const encontrados = listaDeResultados(busca);
-  if (encontrados.length === 0) return [];
-
-  const ids = encontrados
-    .map((c) => texto(c, "id", "contactId"))
-    .filter((id): id is string => id !== null);
-
-  if (ids.length === 0) {
-    throw new Error(
-      `Lusha devolveu ${encontrados.length} contato(s) sem identificador reconhecível. ` +
-        `Campos vistos: ${formaRecebida(encontrados[0])}`,
-    );
-  }
-
-  const requestId = campoDe(busca, "requestId");
-  const enriquecidos = await postar<unknown>(
-    "/prospecting/contact/enrich",
-    requestId ? { requestId, contactIds: ids } : { contactIds: ids },
-    chamada,
-  );
-
-  const lista = listaDeResultados(enriquecidos);
-  if (lista.length === 0) {
-    throw new Error(
-      `Lusha aceitou o enriquecimento mas não devolveu contato reconhecível. ` +
-        `Forma recebida: ${formaRecebida(enriquecidos)}`,
-    );
-  }
-  return lista;
+/** Como a empresa entra no filtro: domínio de preferência, nome se faltar. */
+function empresaNoFiltro(input: {
+  dominio?: string;
+  empresa?: string;
+}): Record<string, unknown> | null {
+  if (input.dominio) return { domains: [input.dominio] };
+  if (input.empresa) return { names: [input.empresa] };
+  return null;
 }
 
 function paraCandidato(
   bruto: Record<string, unknown>,
   fonte: "lusha_finder" | "lusha_domain",
 ): CandidatoDecisor | null {
+  /**
+   * `reveal: ["emails"]` devolve endereços; a doc não fixa o nome do campo.
+   * Cobrimos o objeto direto e a lista, que são as duas formas plausíveis.
+   */
   const email =
     texto(bruto, "email", "emailAddress", "email_address") ??
     texto(objetos(bruto.emails)[0] ?? {}, "email", "address", "value");
@@ -205,10 +207,10 @@ function paraCandidato(
 /**
  * Acha uma pessoa específica na empresa. Equivale ao email-finder da Hunter.
  *
- * A Lusha não tem busca por nome própria: o nome entra como filtro da busca de
- * contatos, restrita ao domínio da empresa. Se vier mais de um, fica o de
- * maior confiança — o desempate por nome exato não é possível sem saber como
- * ela normaliza acentos, e chutar aqui traria a pessoa errada.
+ * Uma chamada só: `search-and-enrich` aceita `firstName` + `lastName` +
+ * `companyDomain` como identificador e já revela o e-mail. Separar em busca e
+ * enriquecimento aqui seria uma ida a mais ao servidor pelo mesmo custo — a
+ * cobrança é a mesma nos dois caminhos (uma de busca, uma de revelação).
  */
 export async function acharEmailPorNome(
   input: {
@@ -220,25 +222,45 @@ export async function acharEmailPorNome(
   },
   deps: { fetch?: FetchLike } = {},
 ): Promise<CandidatoDecisor | null> {
-  const empresas: Record<string, unknown> = {};
-  if (input.dominio) empresas.domains = [input.dominio];
-  else if (input.empresa) empresas.names = [input.empresa];
-  else return null;
+  if (!input.dominio && !input.empresa) return null;
 
-  const contatos = await buscarEEnriquecer(
-    {
-      companies: { include: empresas },
-      contacts: {
-        include: { names: [`${input.primeiroNome} ${input.sobrenome}`] },
-      },
-    },
-    { apiKey: input.apiKey, fetch: deps.fetch },
-  );
+  const identificador: Record<string, unknown> = {
+    // A doc pede um id por contato para casar pedido e resposta em lote.
+    // Aqui é sempre um só, mas mandar o campo evita depender da ordem.
+    contactId: "1",
+    firstName: input.primeiroNome,
+    lastName: input.sobrenome,
+  };
+  if (input.dominio) identificador.companyDomain = input.dominio;
+  else identificador.companyName = input.empresa;
 
-  const candidatos = contatos
+  let resposta: unknown;
+  try {
+    resposta = await postar<unknown>(
+      "/contacts/search-and-enrich",
+      { contacts: [identificador], reveal: REVELAR },
+      { apiKey: input.apiKey, fetch: deps.fetch },
+    );
+  } catch (erro) {
+    // Ou relança traduzido, ou devolve vazio no caso do 451 — que aqui
+    // significa "não temos este contato para entregar".
+    traduzirErro(erro);
+    return null;
+  }
+
+  const encontrados = listaDeResultados(resposta);
+  if (encontrados.length === 0) return null;
+
+  const candidatos = encontrados
     .map((c) => paraCandidato(c, "lusha_finder"))
     .filter((c): c is CandidatoDecisor => c !== null);
 
+  /**
+   * Achou contato mas nenhum com e-mail legível: pode ser contato sem e-mail
+   * no acervo (legítimo) ou campo renomeado (defeito). Devolver `null` é o
+   * certo para a cadeia — ela segue para a próxima fonte — e o caso de campo
+   * renomeado é pego pela busca por cargo, que lança.
+   */
   if (candidatos.length === 0) return null;
   return [...candidatos].sort((a, b) => b.confianca - a.confianca)[0]!;
 }
@@ -246,10 +268,13 @@ export async function acharEmailPorNome(
 /**
  * Acha decisores pelo cargo dentro da empresa. Equivale ao domain-search.
  *
- * O `departamento` e a `senioridade` da cadeia viram os filtros de mesmo nome
- * da Lusha. O departamento vem em português (é o cargo-alvo da campanha) e
- * entra também como `jobTitles`, porque é onde um texto livre tem chance de
- * casar — o campo `departments` da Lusha é uma lista fechada em inglês.
+ * Duas etapas: `prospecting` filtra e devolve prévia sem PII, `enrich` revela
+ * o e-mail — e é só no segundo que o crédito de revelação é gasto.
+ *
+ * O `departamento` da cadeia vem em português (é o cargo-alvo da campanha) e
+ * entra como `jobTitles`, não como `departments`: o filtro de departamento da
+ * Lusha é uma lista fechada, que só aceita valores vindos de
+ * `/contacts/prospecting/filters/departments`. Texto livre ali seria recusado.
  */
 export async function buscarNoDominio(
   input: {
@@ -261,24 +286,67 @@ export async function buscarNoDominio(
   },
   deps: { fetch?: FetchLike } = {},
 ): Promise<CandidatoDecisor[]> {
-  const empresas: Record<string, unknown> = {};
-  if (input.dominio) empresas.domains = [input.dominio];
-  else if (input.empresa) empresas.names = [input.empresa];
-  else return [];
+  const empresas = empresaNoFiltro(input);
+  if (!empresas) return [];
+
+  const chamada = { apiKey: input.apiKey, fetch: deps.fetch };
 
   const contatos: Record<string, unknown> = {};
   if (input.departamento) contatos.jobTitles = [input.departamento];
   if (input.senioridade) contatos.seniority = [input.senioridade];
 
-  const encontrados = await buscarEEnriquecer(
-    {
-      companies: { include: empresas },
-      ...(Object.keys(contatos).length ? { contacts: { include: contatos } } : {}),
-    },
-    { apiKey: input.apiKey, fetch: deps.fetch },
-  );
+  let busca: unknown;
+  try {
+    busca = await postar<unknown>(
+      "/contacts/prospecting",
+      {
+        pagination: { page: 0, size: POR_EMPRESA },
+        filters: {
+          companies: { include: empresas },
+          ...(Object.keys(contatos).length ? { contacts: { include: contatos } } : {}),
+        },
+        options: { maxContactsPerCompany: POR_EMPRESA },
+      },
+      chamada,
+    );
+  } catch (erro) {
+    return traduzirErro(erro);
+  }
 
-  return encontrados
+  const encontrados = listaDeResultados(busca);
+  if (encontrados.length === 0) return [];
+
+  const ids = encontrados
+    .map((c) => texto(c, "id", "contactId"))
+    .filter((id): id is string => id !== null);
+
+  if (ids.length === 0) {
+    throw new Error(
+      `Lusha devolveu ${encontrados.length} contato(s) sem identificador reconhecível. ` +
+        `Campos vistos: ${formaRecebida(encontrados[0])}`,
+    );
+  }
+
+  let enriquecidos: unknown;
+  try {
+    enriquecidos = await postar<unknown>(
+      "/contacts/enrich",
+      { contactIds: ids, reveal: REVELAR },
+      chamada,
+    );
+  } catch (erro) {
+    return traduzirErro(erro);
+  }
+
+  const lista = listaDeResultados(enriquecidos);
+  if (lista.length === 0) {
+    throw new Error(
+      `Lusha aceitou o enriquecimento mas não devolveu contato reconhecível. ` +
+        `Forma recebida: ${formaRecebida(enriquecidos)}`,
+    );
+  }
+
+  return lista
     .map((c) => paraCandidato(c, "lusha_domain"))
     .filter((c): c is CandidatoDecisor => c !== null);
 }
