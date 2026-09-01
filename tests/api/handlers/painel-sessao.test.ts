@@ -25,6 +25,7 @@ function app(senhaDoPainel = SENHA) {
     segredoN8n: SEGREDO_N8N,
     senhaDoPainel,
     apiKeyHunter: "chave-hunter",
+    apiKeyLusha: "",
     apiKeyCasaDosDados: "chave-casa-dos-dados",
   });
 }

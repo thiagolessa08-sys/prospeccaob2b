@@ -34,6 +34,14 @@ export interface Campaign {
   daily_send_limit: number;
   send_mode: "shadow" | "live";
   status: "active" | "paused" | "archived";
+  /** Texto livre: o propósito da solução vendida. Nulo nas campanhas antigas. */
+  solution_purpose: string | null;
+  /** A proposta da IA em revisão, já com as edições da pessoa. Rascunho. */
+  proposal: unknown | null;
+  /** Nulo enquanto a proposta não foi aprovada. */
+  proposal_approved_at: Date | null;
+  /** O briefing aprovado que guia o escritor de e-mail. */
+  pitch_briefing: unknown | null;
   created_at: Date;
 }
 

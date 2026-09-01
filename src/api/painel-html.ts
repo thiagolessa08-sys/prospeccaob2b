@@ -115,11 +115,11 @@ export const PAINEL_HTML = `<!doctype html>
     <h2>Nova campanha</h2>
     <div class="cartao">
       <div class="campos">
-        <label>Nome<input id="f-name" placeholder="Ind&uacute;strias SC"></label>
+        <label>Nome da campanha<input id="f-name" placeholder="Ind&uacute;strias SC"></label>
         <label>Seu primeiro nome<input id="f-sender" placeholder="Thiago"></label>
-        <label class="largo">Nicho, em texto livre
-          <textarea id="f-niche" rows="2" placeholder="ind&uacute;strias de alimentos em Santa Catarina com 50 a 200 funcion&aacute;rios"></textarea></label>
-        <label class="largo">Oferta<input id="f-offer" placeholder="BI e automa&ccedil;&atilde;o de processos"></label>
+        <label class="largo">Para que serve a solu&ccedil;&atilde;o que voc&ecirc; vende
+          <textarea id="f-proposito" rows="3"
+            placeholder="Descreva o problema que a solu&ccedil;&atilde;o resolve e para quem. A IA deriva daqui o nicho, os cargos e o discurso do e-mail &mdash; e voc&ecirc; refina antes de qualquer disparo."></textarea></label>
         <label class="largo">Link de agendamento<input id="f-link" placeholder="https://cal.com/thiago/30min"></label>
       </div>
       <div class="linha" style="margin-top:12px">
@@ -136,6 +136,46 @@ export const PAINEL_HTML = `<!doctype html>
 <dialog id="detalhe">
   <div id="detalhe-corpo"></div>
   <div style="margin-top:16px"><button id="fechar-detalhe">Fechar</button></div>
+</dialog>
+
+<dialog id="proposta">
+  <h3 style="margin:0 0 4px">Proposta da campanha</h3>
+  <p class="vazio" style="margin:0 0 16px">
+    Tudo aqui &eacute; edit&aacute;vel. Nada afeta o funil at&eacute; voc&ecirc; aprovar.
+  </p>
+  <div class="campos">
+    <label class="largo">Nicho &mdash; as empresas que vamos procurar
+      <textarea id="p-nicho" rows="3"></textarea></label>
+    <label class="largo">Oferta &mdash; o que entregamos
+      <textarea id="p-oferta" rows="2"></textarea></label>
+    <label class="largo">Cargos do decisor <span class="vazio">(um por linha)</span>
+      <textarea id="p-cargos" rows="3"></textarea></label>
+    <label class="largo">&Acirc;ngulo da abordagem
+      <textarea id="p-angulo" rows="2"></textarea></label>
+    <label class="largo">Dores <span class="vazio">(uma por linha)</span>
+      <textarea id="p-dores" rows="3"></textarea></label>
+    <label class="largo">Provas <span class="vazio">(uma por linha)</span>
+      <textarea id="p-provas" rows="3"></textarea></label>
+    <label class="largo">N&atilde;o dizer <span class="vazio">(um por linha)</span>
+      <textarea id="p-evitar" rows="3"></textarea></label>
+  </div>
+
+  <h2>E-mail de amostra</h2>
+  <p class="vazio" style="margin:0 0 8px">
+    S&oacute; para voc&ecirc; julgar o tom. N&atilde;o &eacute; este texto que sai:
+    o funil escreve um e-mail por lead seguindo o briefing acima.
+  </p>
+  <div class="campos">
+    <label class="largo">Assunto<input id="p-assunto"></label>
+    <label class="largo">Corpo<textarea id="p-corpo" rows="8"></textarea></label>
+  </div>
+
+  <div class="linha" style="margin-top:16px">
+    <button id="p-salvar">Salvar rascunho</button>
+    <button id="p-aprovar" class="principal">Aprovar e usar</button>
+    <button id="p-fechar">Fechar</button>
+    <span id="p-msg" class="vazio"></span>
+  </div>
 </dialog>
 
 <script>
@@ -240,7 +280,12 @@ async function carregar() {
   desenharCampanhas(campanhas);
 }
 
+// A última lista carregada. O editor de proposta lê daqui em vez de buscar de
+// novo: `carregar()` já traz a proposta inteira junto de cada campanha.
+var campanhasEmTela = [];
+
 function desenharCampanhas(campanhas) {
+  campanhasEmTela = campanhas;
   var alvo = $("campanhas");
   if (!campanhas.length) {
     alvo.innerHTML = '<p class="vazio">Nenhuma campanha ainda. Crie a primeira acima.</p>';
@@ -257,6 +302,13 @@ function desenharCampanhas(campanhas) {
     html += c.tem_filtros
       ? '<span class="etiqueta">filtros ok</span>'
       : '<span class="etiqueta" style="color:var(--alerta)">sem filtros</span>';
+    if (c.proposta_aprovada_em) {
+      html += '<span class="etiqueta" style="color:var(--ok)">proposta aprovada</span>';
+    } else if (c.tem_proposta) {
+      html += '<span class="etiqueta" style="color:var(--alerta)">proposta em revis&atilde;o</span>';
+    } else {
+      html += '<span class="etiqueta" style="color:var(--alerta)">sem proposta</span>';
+    }
     html += "</div>";
     html += '<div style="color:var(--fraco);font-size:13px;margin-top:6px">' + esc(c.niche_description) + "</div>";
 
@@ -266,6 +318,15 @@ function desenharCampanhas(campanhas) {
     html += "<div>Sem decisor<b>" + c.empresas.failed + "</b></div>";
     for (var j = 0; j < ESTAGIOS.length; j++) {
       html += "<div>" + ESTAGIOS[j][1] + "<b>" + c.leads[ESTAGIOS[j][0]] + "</b></div>";
+    }
+    html += "</div>";
+
+    html += '<div class="linha" style="margin-bottom:10px">';
+    html += '<button data-propor="' + esc(c.id) + '">'
+      + (c.tem_proposta ? "Propor de novo" : "Propor com IA") + "</button>";
+    if (c.tem_proposta) {
+      html += '<button data-proposta="' + esc(c.id) + '" class="'
+        + (c.proposta_aprovada_em ? "" : "principal") + '">Revisar proposta</button>';
     }
     html += "</div>";
 
@@ -407,8 +468,7 @@ async function criarCampanha() {
   var msg = $("criar-msg");
   var corpo = {
     name: $("f-name").value.trim(),
-    nicheDescription: $("f-niche").value.trim(),
-    offerDescription: $("f-offer").value.trim(),
+    solutionPurpose: $("f-proposito").value.trim(),
     schedulingLink: $("f-link").value.trim(),
     senderFirstName: $("f-sender").value.trim()
   };
@@ -417,12 +477,135 @@ async function criarCampanha() {
   msg.textContent = "Criando...";
   try {
     await api("/campaigns", { method: "POST", body: corpo });
-    msg.textContent = "Criada. Rode Gerar filtros no cartão dela.";
+    msg.textContent = "Criada. Agora clique em Propor com IA no cartão dela.";
     $("f-name").value = "";
-    $("f-niche").value = "";
-    $("f-offer").value = "";
+    $("f-proposito").value = "";
     $("f-link").value = "";
     $("f-sender").value = "";
+    await carregar();
+  } catch (e) {
+    if (e.message !== "401") {
+      msg.className = "aviso";
+      msg.textContent = e.message;
+    }
+  }
+}
+
+// ---------------------------------------------------------------- proposta
+
+// Qual campanha está aberta no editor. Guardado aqui porque os botões de
+// salvar e aprovar vivem no diálogo, longe do cartão que foi clicado.
+var propostaAberta = null;
+
+function linhas(valor) {
+  return String(valor || "")
+    .split("\\n")
+    .map(function (l) { return l.trim(); })
+    .filter(function (l) { return l.length > 0; });
+}
+
+/**
+ * Pede a proposta à IA. Demora — é raciocínio alto no modelo — então o botão
+ * desabilita e diz o que está acontecendo, senão a tela parece travada.
+ */
+async function propor(botao, id) {
+  var saida = $("saida-" + id);
+  botao.disabled = true;
+  saida.innerHTML = "<pre>Pedindo a proposta &agrave; IA. Costuma levar algumas dezenas de segundos...</pre>";
+  try {
+    await api("/campaigns/" + id + "/propor", { method: "POST" });
+    saida.innerHTML = "";
+    await carregar();
+    abrirProposta(id);
+  } catch (e) {
+    if (e.message !== "401") saida.innerHTML = '<pre class="aviso">' + esc(e.message) + "</pre>";
+  } finally {
+    botao.disabled = false;
+  }
+}
+
+function abrirProposta(id) {
+  var c = null;
+  for (var i = 0; i < campanhasEmTela.length; i++) {
+    if (campanhasEmTela[i].id === id) c = campanhasEmTela[i];
+  }
+  if (!c || !c.proposta) return;
+
+  var p = c.proposta;
+  var b = p.briefing || {};
+  propostaAberta = id;
+
+  $("p-nicho").value = p.nicho || "";
+  $("p-oferta").value = p.oferta || "";
+  $("p-cargos").value = (p.cargos || []).join("\\n");
+  $("p-angulo").value = b.angulo || "";
+  $("p-dores").value = (b.dores || []).join("\\n");
+  $("p-provas").value = (b.provas || []).join("\\n");
+  $("p-evitar").value = (b.evitar || []).join("\\n");
+  $("p-assunto").value = (p.exemplo_de_email || {}).assunto || "";
+  $("p-corpo").value = (p.exemplo_de_email || {}).corpo || "";
+
+  $("p-msg").className = "vazio";
+  $("p-msg").textContent = c.proposta_aprovada_em ? "Já aprovada. Salvar de novo exige aprovar de novo." : "";
+  $("proposta").showModal();
+}
+
+function propostaDoFormulario() {
+  return {
+    nicho: $("p-nicho").value.trim(),
+    oferta: $("p-oferta").value.trim(),
+    cargos: linhas($("p-cargos").value),
+    briefing: {
+      angulo: $("p-angulo").value.trim(),
+      dores: linhas($("p-dores").value),
+      provas: linhas($("p-provas").value),
+      evitar: linhas($("p-evitar").value)
+    },
+    exemplo_de_email: {
+      assunto: $("p-assunto").value.trim(),
+      corpo: $("p-corpo").value.trim()
+    }
+  };
+}
+
+async function salvarPropostaEditada() {
+  if (!propostaAberta) return false;
+  var msg = $("p-msg");
+  msg.className = "vazio";
+  msg.textContent = "Salvando...";
+  try {
+    await api("/campaigns/" + propostaAberta + "/proposta", {
+      method: "PUT",
+      body: propostaDoFormulario()
+    });
+    msg.textContent = "Rascunho salvo.";
+    return true;
+  } catch (e) {
+    if (e.message !== "401") {
+      msg.className = "aviso";
+      msg.textContent = e.message;
+    }
+    return false;
+  }
+}
+
+/**
+ * Salva antes de aprovar, sempre.
+ *
+ * A aprovação promove o que está GRAVADO, não o que está na tela. Sem salvar
+ * primeiro, uma edição feita e não salva seria silenciosamente descartada — a
+ * pessoa aprovaria uma coisa e o funil usaria outra.
+ */
+async function aprovarPropostaEditada() {
+  if (!propostaAberta) return;
+  if (!(await salvarPropostaEditada())) return;
+
+  var msg = $("p-msg");
+  msg.textContent = "Aprovando...";
+  try {
+    await api("/campaigns/" + propostaAberta + "/aprovar-proposta", { method: "POST" });
+    $("proposta").close();
+    propostaAberta = null;
     await carregar();
   } catch (e) {
     if (e.message !== "401") {
@@ -481,6 +664,9 @@ $("sair").onclick = sair;
 $("recarregar").onclick = carregar;
 $("criar").onclick = criarCampanha;
 $("fechar-detalhe").onclick = function () { $("detalhe").close(); };
+$("p-salvar").onclick = salvarPropostaEditada;
+$("p-aprovar").onclick = aprovarPropostaEditada;
+$("p-fechar").onclick = function () { $("proposta").close(); propostaAberta = null; };
 
 // Delegacao: os cartoes sao redesenhados a cada recarga, e um ouvinte por
 // botao morreria junto com o innerHTML anterior.
@@ -488,6 +674,8 @@ document.addEventListener("click", function (e) {
   if (!e.target.closest) return;
   var b = e.target.closest("button");
   if (b && b.dataset.acao) return dispararAcao(b, b.dataset.id, b.dataset.acao);
+  if (b && b.dataset.propor) return propor(b, b.dataset.propor);
+  if (b && b.dataset.proposta) return abrirProposta(b.dataset.proposta);
   if (b && b.dataset.leads) return verLeads(b.dataset.leads);
   var tr = e.target.closest("tr[data-lead]");
   if (tr) return verLead(tr.dataset.lead);

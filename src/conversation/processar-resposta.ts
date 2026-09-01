@@ -99,6 +99,7 @@ export async function processarResposta(
 
   const voice = {
     offerDescription: campanha.offer_description,
+    briefing: campanha.pitch_briefing,
     tone: campanha.tone,
     senderFirstName: campanha.sender_first_name,
   };

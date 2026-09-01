@@ -27,6 +27,7 @@ function app() {
     segredoN8n: "segredo-n8n",
     senhaDoPainel: "senha-do-painel",
     apiKeyHunter: "chave-hunter",
+    apiKeyLusha: "",
     apiKeyCasaDosDados: "chave-casa-dos-dados",
   });
 }
@@ -127,6 +128,7 @@ describe("erros não tratados", () => {
         segredoN8n: "segredo-n8n",
         senhaDoPainel: "senha-do-painel",
         apiKeyHunter: "chave-hunter",
+        apiKeyLusha: "",
         apiKeyCasaDosDados: "chave-casa-dos-dados",
       });
       const res = await appQuebrado.request("/campaigns/ativas", {

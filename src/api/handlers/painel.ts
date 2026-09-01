@@ -82,6 +82,17 @@ export async function tratarResumoDoPainel(
         // Booleano, não o objeto: os filtros podem conter o nicho inteiro e a
         // tela só precisa saber se `gerar-filtros` já rodou.
         tem_filtros: campanha.filters !== null,
+        tem_proposta: campanha.proposal !== null,
+        proposta_aprovada_em: campanha.proposal_approved_at,
+        /**
+         * A proposta inteira vai junto, ao contrário dos filtros.
+         *
+         * É o que o editor de refino carrega, e são poucos KB por campanha.
+         * Uma rota separada só para ela custaria uma ida a mais ao servidor
+         * toda vez que alguém abre a proposta — e o painel já busca esta
+         * lista a cada ação de lote, então ela estaria sempre fresca aqui.
+         */
+        proposta: campanha.proposal,
         created_at: campanha.created_at,
         empresas,
         leads,

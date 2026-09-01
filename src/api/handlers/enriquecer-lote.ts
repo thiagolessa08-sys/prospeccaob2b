@@ -8,6 +8,7 @@ export interface DepsEnriquecerLoteHttp {
   tenantId: string;
   segredo: string;
   apiKeyHunter: string;
+  apiKeyLusha: string;
 }
 
 /**
@@ -29,6 +30,7 @@ export async function tratarEnriquecerLote(
     tenantId: deps.tenantId,
     campaignId,
     apiKeyHunter: deps.apiKeyHunter,
+    apiKeyLusha: deps.apiKeyLusha,
   });
 
   return new Response(JSON.stringify(resultado), { status: 200 });

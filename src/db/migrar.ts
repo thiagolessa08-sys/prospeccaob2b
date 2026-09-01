@@ -1,5 +1,5 @@
 /**
- * Aplica o schema no banco apontado por DATABASE_URL.
+ * Aplica as migrations pendentes no banco apontado por DATABASE_URL.
  *
  * Existe porque um Postgres novo (Railway, RDS, local) nasce vazio, e o app
  * sobe normalmente contra um banco sem tabela nenhuma — o pool do `pg` só
@@ -13,19 +13,16 @@
  * rodar antes do servidor no start do Railway, onde a DATABASE_URL já está
  * no ambiente. Assim ninguém precisa passar credencial de banco à mão.
  *
- * Sai limpo quando o schema já existe, porque roda a cada deploy. A checagem
- * é grosseira de propósito (existe a tabela `tenants`?): com uma migration
- * só, um controle de versão de migrations seria cerimônia sem uso. Ao
- * acrescentar a segunda, troque isto por uma ferramenta de verdade em vez de
- * empilhar checagens.
+ * Roda a cada deploy e sai limpo quando não há nada pendente. Qual migration
+ * já rodou é decidido por `schema_migrations` (ver `migrations.ts`), e não
+ * mais por "a tabela tenants existe?" — aquela checagem grosseira bastava
+ * enquanto havia uma migration só, e não sabe o que fazer com a segunda.
  */
 import pg from "pg";
-import { readFileSync } from "node:fs";
-import { CAMINHO_DA_MIGRATION } from "./caminho-migration.js";
+import { CAMINHO_DAS_MIGRATIONS } from "./caminho-migration.js";
+import { listarMigrations, aplicarMigrations, type Migration } from "./migrations.js";
 import { semSegredos } from "../config/redigir.js";
 import { UUID_DO_POSTGRES } from "../config/env.js";
-
-const MIGRATION = CAMINHO_DA_MIGRATION;
 
 const url = process.env.DATABASE_URL?.trim();
 if (!url) {
@@ -65,17 +62,25 @@ if (url.lastIndexOf("postgres://") > 0 || url.lastIndexOf("postgresql://") > 0) 
 }
 
 /**
- * Lê o .sql ANTES de conectar.
+ * Lê os .sql ANTES de conectar.
  *
- * Não é detalhe de ordem: um caminho errado passa a falhar sem abrir conexão
- * nenhuma, o que torna o erro reproduzível localmente sem banco — foi
- * justamente o que faltou para pegar o `../` vs `../../` antes do deploy.
+ * Não é detalhe de ordem: um caminho errado, ou um arquivo com nome fora da
+ * convenção, passa a falhar sem abrir conexão nenhuma — o que torna o erro
+ * reproduzível localmente sem banco. Foi justamente o que faltou para pegar o
+ * `../` vs `../../` antes do deploy.
  */
-let sql: string;
+let migrations: Migration[];
 try {
-  sql = readFileSync(MIGRATION, "utf8");
-} catch {
-  console.error(`Migration não encontrada em ${MIGRATION}`);
+  migrations = listarMigrations(CAMINHO_DAS_MIGRATIONS);
+} catch (erro) {
+  console.error(
+    `Não foi possível ler as migrations em ${CAMINHO_DAS_MIGRATIONS}: ` +
+      (erro instanceof Error ? erro.message : String(erro)),
+  );
+  process.exit(1);
+}
+if (migrations.length === 0) {
+  console.error(`Nenhuma migration encontrada em ${CAMINHO_DAS_MIGRATIONS}.`);
   process.exit(1);
 }
 
@@ -97,23 +102,28 @@ if (!UUID_DO_POSTGRES.test(tenantId)) {
 }
 
 console.log(`Conectando em ${alvo.hostname}:${alvo.port || 5432}${alvo.pathname}`);
+
+// `Client`, e não `Pool`: `aplicarMigrations` abre transação por consulta
+// comum, e num pool o `begin` poderia sair por uma conexão e o DDL por outra.
 const cliente = new pg.Client({ connectionString: url });
 
 try {
   await cliente.connect();
 
-  const { rows } = await cliente.query<{ existe: boolean }>(
-    `select to_regclass('public.tenants') is not null as existe`,
-  );
+  const resultado = await aplicarMigrations(cliente, migrations);
 
-  if (rows[0]?.existe) {
-    console.log("Schema já aplicado (tabela `tenants` existe).");
-  } else {
-    await cliente.query(sql);
-    const { rows: tabelas } = await cliente.query<{ nome: string }>(
-      `select tablename as nome from pg_tables where schemaname = 'public' order by tablename`,
+  if (resultado.adotadas.length) {
+    console.log(
+      `Banco existente adotado: ${resultado.adotadas.join(", ")} registrada(s) sem reaplicar.`,
     );
-    console.log(`Schema aplicado. Tabelas: ${tabelas.map((t) => t.nome).join(", ")}`);
+  }
+  if (resultado.jaAplicadas.length) {
+    console.log(`Já aplicadas: ${resultado.jaAplicadas.join(", ")}`);
+  }
+  if (resultado.aplicadas.length) {
+    console.log(`Aplicadas agora: ${resultado.aplicadas.join(", ")}`);
+  } else {
+    console.log("Nenhuma migration pendente.");
   }
 
   /**

@@ -185,6 +185,7 @@ export async function enviarLote(
         rascunho = await deps.escreverEmail({
           voice: {
             offerDescription: campanha.offer_description,
+            briefing: campanha.pitch_briefing,
             tone: campanha.tone,
             senderFirstName: campanha.sender_first_name,
           },

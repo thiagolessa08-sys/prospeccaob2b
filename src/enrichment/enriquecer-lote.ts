@@ -11,6 +11,7 @@ import { enriquecerDecisor, type DepsEnriquecimento } from "./chain.js";
 import { paraNovoLead } from "./para-lead.js";
 import { alvoDaCampanha } from "./alvo.js";
 import { dominioDoSite } from "./dominio.js";
+import { escolherProvedor } from "./provedor.js";
 
 export interface ResultadoDoEnriquecimentoEmLote {
   processadas: number;
@@ -34,11 +35,24 @@ export async function enriquecerLote(
     tenantId: string;
     campaignId: string;
     apiKeyHunter: string;
+    /** `LUSHA_API_KEY`. Preenchida, a Lusha entra no lugar da Hunter. */
+    apiKeyLusha?: string;
     limite?: number;
   },
   deps?: DepsEnriquecimento,
 ): Promise<ResultadoDoEnriquecimentoEmLote> {
   const { db, tenantId, campaignId, apiKeyHunter, limite = 20 } = input;
+
+  /**
+   * `deps` explícito vence a escolha por chave: é como os testes injetam
+   * fornecedor falso, e uma variável de ambiente não pode sequestrar isso.
+   */
+  const provedor = escolherProvedor({
+    hunter: apiKeyHunter,
+    lusha: input.apiKeyLusha ?? "",
+  });
+  const depsDaCadeia = deps ?? provedor.deps;
+  const apiKey = deps ? apiKeyHunter : provedor.apiKey;
   const vazio = { processadas: 0, encontrados: 0, falhas: 0 };
 
   const campanha = await buscarCampanha(db, tenantId, campaignId);
@@ -83,10 +97,10 @@ export async function enriquecerLote(
         {
           cnpj: empresa.cnpj,
           dominio: dominioDoSite(empresa.website),
-          apiKey: apiKeyHunter,
+          apiKey,
           alvo,
         },
-        deps,
+        depsDaCadeia,
       );
 
       // Sempre grava, ache ou não. É a única forma de medir a taxa de acerto
@@ -98,6 +112,10 @@ export async function enriquecerLote(
         payload: {
           companyId: empresa.id,
           achou: resultado.achou,
+          // Qual fornecedor produziu esta tentativa. Sem isto, os eventos de
+          // Hunter e Lusha se misturam e a comparação de acerto e custo
+          // entre os dois — o motivo de existir a troca — fica impossível.
+          provedor: provedor.nome,
           tentativas: resultado.tentativas,
         },
       });

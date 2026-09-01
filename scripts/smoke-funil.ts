@@ -194,6 +194,7 @@ async function main() {
     segredoN8n: SEGREDO_N8N,
     senhaDoPainel: "senha-do-painel",
     apiKeyHunter: CHAVES.hunter ?? "chave-stub",
+    apiKeyLusha: "",
     apiKeyCasaDosDados: CHAVES.casaDosDados ?? "chave-stub",
   });
 

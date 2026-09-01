@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
-import { existsSync, readFileSync } from "node:fs";
-import { CAMINHO_DA_MIGRATION } from "../../src/db/caminho-migration.js";
+import { existsSync, statSync } from "node:fs";
+import { CAMINHO_DAS_MIGRATIONS } from "../../src/db/caminho-migration.js";
+import { listarMigrations } from "../../src/db/migrations.js";
 
 /**
  * Guarda de regressão para um bug que foi ao ar: o script de migration nasceu
@@ -11,22 +12,34 @@ import { CAMINHO_DA_MIGRATION } from "../../src/db/caminho-migration.js";
  * O teste roda a partir de `src/db/`, que está à mesma profundidade de
  * `dist/db/` — então acertar aqui é acertar no artefato compilado também.
  */
-describe("CAMINHO_DA_MIGRATION", () => {
-  it("aponta para um arquivo que existe", () => {
-    expect(existsSync(CAMINHO_DA_MIGRATION)).toBe(true);
-  });
-
-  it("aponta para o schema, e não para outro .sql qualquer", () => {
-    const sql = readFileSync(CAMINHO_DA_MIGRATION, "utf8");
-    expect(sql).toContain("create table tenants");
-    expect(sql).toContain("create table campaigns");
-    expect(sql).toContain("create table leads");
+describe("CAMINHO_DAS_MIGRATIONS", () => {
+  it("aponta para um diretório que existe", () => {
+    expect(existsSync(CAMINHO_DAS_MIGRATIONS)).toBe(true);
+    expect(statSync(CAMINHO_DAS_MIGRATIONS).isDirectory()).toBe(true);
   });
 
   it("resolve para fora de src/ e de dist/", () => {
-    const normalizado = CAMINHO_DA_MIGRATION.replace(/\\/g, "/");
-    expect(normalizado).toContain("/supabase/migrations/");
+    const normalizado = CAMINHO_DAS_MIGRATIONS.replace(/\\/g, "/");
+    expect(normalizado).toContain("/supabase/migrations");
     expect(normalizado).not.toContain("/src/supabase/");
     expect(normalizado).not.toContain("/dist/supabase/");
+  });
+
+  it("contém o schema inicial, e não outro .sql qualquer", () => {
+    const migrations = listarMigrations(CAMINHO_DAS_MIGRATIONS);
+    expect(migrations.length).toBeGreaterThan(0);
+
+    const primeira = migrations[0]!;
+    expect(primeira.versao).toBe("0001_initial_schema.sql");
+    expect(primeira.sql).toContain("create table tenants");
+    expect(primeira.sql).toContain("create table campaigns");
+    expect(primeira.sql).toContain("create table leads");
+  });
+
+  it("todas as migrations do repositório seguem a convenção de nome", () => {
+    // `listarMigrations` lança em arquivo fora do padrão. Chamar aqui é o que
+    // impede alguém de acrescentar `nova.sql` sem prefixo e só descobrir no
+    // deploy, onde a ordem de aplicação passaria a ser indefinida.
+    expect(() => listarMigrations(CAMINHO_DAS_MIGRATIONS)).not.toThrow();
   });
 });

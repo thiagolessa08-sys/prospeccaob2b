@@ -19,6 +19,11 @@ import {
   tratarLeadsDaCampanha,
   tratarDetalheDoLead,
 } from "./handlers/painel.js";
+import {
+  tratarProporCampanha,
+  tratarSalvarProposta,
+  tratarAprovarProposta,
+} from "./handlers/proposta.js";
 import { PAINEL_HTML } from "./painel-html.js";
 import {
   tratarLoginDoPainel,
@@ -35,6 +40,7 @@ export interface DepsDoApp {
   /** `PAINEL_SENHA`. Vazia desliga o painel sem afetar o resto da API. */
   senhaDoPainel: string;
   apiKeyHunter: string;
+  apiKeyLusha: string;
   apiKeyCasaDosDados: string;
 }
 
@@ -141,6 +147,36 @@ export function criarApp(deps: DepsDoApp): Hono {
     }),
   );
 
+  // O começo do funil novo: o propósito da solução vira campanha proposta.
+  // Rota lenta e cara (raciocínio alto no modelo), mas repetível à vontade —
+  // o resultado é rascunho e só sobrescreve rascunho.
+  app.post("/campaigns/:id/propor", async (c) =>
+    tratarProporCampanha(await comoOperador(c.req.raw, deps), c.req.param("id"), {
+      db: deps.db,
+      tenantId: deps.tenantId,
+      segredo: deps.segredoN8n,
+    }),
+  );
+
+  // O refino: grava a proposta editada. Barata, só valida e escreve.
+  app.put("/campaigns/:id/proposta", async (c) =>
+    tratarSalvarProposta(await comoOperador(c.req.raw, deps), c.req.param("id"), {
+      db: deps.db,
+      tenantId: deps.tenantId,
+      segredo: deps.segredoN8n,
+    }),
+  );
+
+  // A aprovação: promove o rascunho a campanha e zera os filtros, que foram
+  // derivados do nicho anterior. `gerar-filtros` precisa rodar depois.
+  app.post("/campaigns/:id/aprovar-proposta", async (c) =>
+    tratarAprovarProposta(await comoOperador(c.req.raw, deps), c.req.param("id"), {
+      db: deps.db,
+      tenantId: deps.tenantId,
+      segredo: deps.segredoN8n,
+    }),
+  );
+
   app.post("/webhooks/instantly", (c) =>
     tratarWebhookInstantly(c.req.raw, {
       db: deps.db,
@@ -184,6 +220,7 @@ export function criarApp(deps: DepsDoApp): Hono {
       tenantId: deps.tenantId,
       segredo: deps.segredoN8n,
       apiKeyHunter: deps.apiKeyHunter,
+      apiKeyLusha: deps.apiKeyLusha,
     }),
   );
 

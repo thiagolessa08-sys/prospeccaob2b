@@ -18,6 +18,58 @@ export interface CampaignVoice {
    * o que é falsidade de identidade e problema de transparência sob a LGPD.
    */
   senderFirstName: string;
+  /**
+   * O briefing aprovado na tela de refino, vindo de `campaigns.pitch_briefing`.
+   *
+   * Opcional: campanha criada antes da tela existir não tem briefing, e o
+   * e-mail continua sendo escrito a partir da oferta e do tom, como sempre
+   * foi. Quando existe, entra no prefixo do sistema junto com a oferta —
+   * porque é instrução da campanha, igual a ela, e não contexto do lead.
+   */
+  briefing?: unknown;
+}
+
+/**
+ * `unknown`, e não uma interface, porque é o tipo honesto: isto vem da coluna
+ * `jsonb` `campaigns.pitch_briefing`, que o driver entrega sem validar nada.
+ * Declarar uma forma aqui obrigaria um cast em cada um dos três pontos que
+ * montam a voz — três lugares onde o compilador pararia de conferir. Assim a
+ * checagem acontece uma vez só, aqui dentro.
+ */
+type Lista = readonly string[];
+
+function listaDe(valor: unknown): Lista {
+  if (!Array.isArray(valor)) return [];
+  return valor.filter(
+    (i): i is string => typeof i === "string" && i.trim().length > 0,
+  );
+}
+
+/** Uma seção do briefing, ou vazio quando a lista não veio. */
+function secao(titulo: string, itens: unknown): string {
+  const limpos = listaDe(itens);
+  if (limpos.length === 0) return "";
+  return `\n${titulo}\n${limpos.map((i) => `- ${i}`).join("\n")}\n`;
+}
+
+/**
+ * O briefing em texto, pronto para entrar no prompt.
+ *
+ * Devolve string vazia quando não há briefing útil — e não um cabeçalho com
+ * lista vazia embaixo, que o modelo leria como "não há dor nenhuma a citar".
+ */
+export function briefingEmTexto(briefing: unknown): string {
+  if (!briefing || typeof briefing !== "object") return "";
+
+  const b = briefing as Record<string, unknown>;
+  const angulo = typeof b.angulo === "string" ? b.angulo.trim() : "";
+
+  return (
+    (angulo ? `\nÂngulo da abordagem:\n${angulo}\n` : "") +
+    secao("Dores que o destinatário reconhece:", b.dores) +
+    secao("Provas que sustentam a promessa:", b.provas) +
+    secao("Não diga, nesta campanha:", b.evitar)
+  );
 }
 
 export interface CompanyContext {
@@ -46,7 +98,7 @@ O que oferecemos:
 ${voice.offerDescription}
 
 Tom de voz: ${voice.tone}
-
+${briefingEmTexto(voice.briefing)}
 Regras invioláveis:
 - Máximo de 120 palavras no corpo.
 - Assunto com no máximo 60 caracteres, sem emoji, sem promessa exagerada, sem "urgente".

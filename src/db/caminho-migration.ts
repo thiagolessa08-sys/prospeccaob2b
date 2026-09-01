@@ -2,7 +2,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
 /**
- * Onde está o .sql do schema, resolvido a partir deste módulo.
+ * Onde estão os .sql do schema, resolvido a partir deste módulo.
  *
  * Vive num arquivo próprio, sem efeito colateral, só para poder ser testado:
  * `migrar.ts` tem top-level await e `process.exit`, então importá-lo num
@@ -14,8 +14,11 @@ import { dirname, join } from "node:path";
  * nasceu em `scripts/`, onde `../` era o certo, e mover o arquivo não corrige
  * o caminho. O deploy foi ao ar procurando `/app/dist/supabase/...` e ficou
  * em loop de crash.
+ *
+ * Aponta para o diretório, e não mais para um arquivo: a partir da segunda
+ * migration é a lista ordenada que importa, não um .sql específico.
  */
-export const CAMINHO_DA_MIGRATION = join(
+export const CAMINHO_DAS_MIGRATIONS = join(
   dirname(fileURLToPath(import.meta.url)),
-  "../../supabase/migrations/0001_initial_schema.sql",
+  "../../supabase/migrations",
 );

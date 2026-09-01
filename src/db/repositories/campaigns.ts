@@ -9,13 +9,16 @@ export interface NovaCampanha {
   offerDescription: string;
   schedulingLink: string;
   senderFirstName: string;
+  /** Texto livre do propósito da solução, quando a campanha nasce pelo painel. */
+  solutionPurpose?: string;
   tone?: string;
   dailySendLimit?: number;
 }
 
 const COLUNAS = `id, tenant_id, name, niche_description, filters,
   offer_description, tone, scheduling_link, sender_first_name,
-  daily_send_limit, send_mode, status, created_at`;
+  daily_send_limit, send_mode, status, solution_purpose, proposal,
+  proposal_approved_at, pitch_briefing, created_at`;
 
 export async function criarCampanha(
   db: Db,
@@ -24,10 +27,11 @@ export async function criarCampanha(
   const { rows } = await db.query<Campaign>(
     `insert into campaigns
        (tenant_id, name, niche_description, offer_description,
-        scheduling_link, sender_first_name, tone, daily_send_limit)
+        scheduling_link, sender_first_name, tone, daily_send_limit,
+        solution_purpose)
      values ($1, $2, $3, $4, $5, $6,
              coalesce($7, 'consultivo, direto, sem jargão'),
-             coalesce($8, 20))
+             coalesce($8, 20), $9)
      returning ${COLUNAS}`,
     [
       input.tenantId,
@@ -38,6 +42,7 @@ export async function criarCampanha(
       input.senderFirstName,
       input.tone ?? null,
       input.dailySendLimit ?? null,
+      input.solutionPurpose ?? null,
     ],
   );
   return rows[0]!;
@@ -187,4 +192,61 @@ export async function listarCampanhas(
     [tenantId],
   );
   return rows;
+}
+
+/** Grava a proposta em revisão. Não toca em nada que o funil leia. */
+export async function salvarProposta(
+  db: Db,
+  tenantId: string,
+  campaignId: string,
+  proposta: unknown,
+): Promise<void> {
+  await db.query(
+    `update campaigns set proposal = $3 where tenant_id = $1 and id = $2`,
+    [tenantId, campaignId, JSON.stringify(proposta)],
+  );
+}
+
+export interface PropostaAprovada {
+  nicho: string;
+  oferta: string;
+  briefing: unknown;
+}
+
+/**
+ * Promove a proposta a campanha de verdade.
+ *
+ * É aqui que o rascunho vira os campos que o funil já lê há muito tempo:
+ * `niche_description` alimenta `parseNiche`, `offer_description` alimenta a
+ * voz dos e-mails. O caminho novo termina no caminho antigo de propósito —
+ * assim descoberta, enriquecimento e envio não precisaram saber que uma
+ * proposta existe.
+ *
+ * `filters` é zerado junto: os filtros em vigor foram derivados do nicho
+ * anterior, e mantê-los faria a campanha buscar empresas de um alvo que
+ * acabou de ser substituído. Zerando, `gerar-filtros` precisa rodar de novo —
+ * e a tela mostra "sem filtros" até que rode.
+ */
+export async function aprovarProposta(
+  db: Db,
+  tenantId: string,
+  campaignId: string,
+  aprovada: PropostaAprovada,
+): Promise<void> {
+  await db.query(
+    `update campaigns
+        set niche_description = $3,
+            offer_description = $4,
+            pitch_briefing = $5,
+            filters = null,
+            proposal_approved_at = now()
+      where tenant_id = $1 and id = $2`,
+    [
+      tenantId,
+      campaignId,
+      aprovada.nicho,
+      aprovada.oferta,
+      JSON.stringify(aprovada.briefing),
+    ],
+  );
 }

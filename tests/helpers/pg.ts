@@ -1,14 +1,7 @@
 import { PGlite } from "@electric-sql/pglite";
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
 import type { Db } from "../../src/db/port.js";
-
-const aqui = dirname(fileURLToPath(import.meta.url));
-const CAMINHO_MIGRATION = join(
-  aqui,
-  "../../supabase/migrations/0001_initial_schema.sql",
-);
+import { CAMINHO_DAS_MIGRATIONS } from "../../src/db/caminho-migration.js";
+import { listarMigrations } from "../../src/db/migrations.js";
 
 export const TENANT_ID = "11111111-1111-1111-1111-111111111111";
 export const CAMPANHA_ID = "22222222-2222-2222-2222-222222222222";
@@ -30,7 +23,14 @@ export interface BancoDeTeste {
  */
 export async function subirBanco(): Promise<BancoDeTeste> {
   const pglite = new PGlite();
-  await pglite.exec(readFileSync(CAMINHO_MIGRATION, "utf8"));
+
+  // Todas as migrations, na ordem — e não só a primeira. Fixar um arquivo
+  // aqui faria os testes rodarem contra um schema mais velho que o de
+  // produção no dia em que a segunda migration entrasse, e a divergência
+  // apareceria como teste verde e deploy quebrado.
+  for (const migration of listarMigrations(CAMINHO_DAS_MIGRATIONS)) {
+    await pglite.exec(migration.sql);
+  }
 
   // Anotação direta, sem cast: o PGlite satisfaz `Db` estruturalmente, e é
   // justamente isso que o porte promete. Um `as unknown as Db` calaria o

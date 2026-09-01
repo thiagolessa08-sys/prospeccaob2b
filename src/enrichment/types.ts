@@ -6,7 +6,9 @@ export type FonteDoDecisor =
   | "cnpj_qsa"
   | "cnpj_email"
   | "hunter_finder"
-  | "hunter_domain";
+  | "hunter_domain"
+  | "lusha_finder"
+  | "lusha_domain";
 
 export interface CandidatoDecisor {
   nome: string | null;

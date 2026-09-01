@@ -2,6 +2,7 @@ import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { MODEL, getClient, type AiDeps } from "./client.js";
 import {
   EmailDraftSchema,
+  briefingEmTexto,
   type EmailDraft,
   type CampaignVoice,
 } from "./email-writer.js";
@@ -27,6 +28,7 @@ O que oferecemos:
 ${voice.offerDescription}
 
 Tom de voz: ${voice.tone}
+${briefingEmTexto(voice.briefing)}
 
 Regras invioláveis:
 - Máximo de 120 palavras no corpo.

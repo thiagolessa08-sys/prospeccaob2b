@@ -15,14 +15,27 @@ interface CorpoDaCriacao {
   offerDescription?: unknown;
   schedulingLink?: unknown;
   senderFirstName?: unknown;
+  solutionPurpose?: unknown;
   tone?: unknown;
   dailySendLimit?: unknown;
 }
 
-const CAMPOS_OBRIGATORIOS = [
+/** Caminho antigo: a pessoa escreve nicho e oferta separados. */
+const CAMPOS_CLASSICOS = [
   "name",
   "nicheDescription",
   "offerDescription",
+  "schedulingLink",
+  "senderFirstName",
+] as const;
+
+/**
+ * Caminho do painel: a pessoa escreve só o propósito da solução, e a IA
+ * deriva nicho e oferta depois, em `POST /campaigns/:id/propor`.
+ */
+const CAMPOS_PELO_PROPOSITO = [
+  "name",
+  "solutionPurpose",
   "schedulingLink",
   "senderFirstName",
 ] as const;
@@ -55,7 +68,15 @@ export async function tratarCriarCampanha(
     });
   }
 
-  const faltando = CAMPOS_OBRIGATORIOS.filter((campo) => !textoNaoVazio(corpo[campo]));
+  const peloProposito = textoNaoVazio(corpo.solutionPurpose);
+  // Anotado, e não inferido: sem isto o tipo vira a união das duas tuplas, e
+  // chamar `.filter` sobre união de tuplas com elementos diferentes é onde o
+  // TypeScript desiste.
+  const exigidos: readonly (keyof CorpoDaCriacao)[] = peloProposito
+    ? CAMPOS_PELO_PROPOSITO
+    : CAMPOS_CLASSICOS;
+
+  const faltando = exigidos.filter((campo) => !textoNaoVazio(corpo[campo]));
   if (faltando.length > 0) {
     return new Response(
       JSON.stringify({ erro: `campo(s) obrigatório(s) ausente(s): ${faltando.join(", ")}` }),
@@ -63,11 +84,29 @@ export async function tratarCriarCampanha(
     );
   }
 
+  /**
+   * Pelo propósito, nicho e oferta nascem provisórios com o próprio texto do
+   * propósito, e são substituídos na aprovação da proposta.
+   *
+   * As duas colunas são `not null` no schema desde o início, e afrouxá-las
+   * espalharia `string | null` por todo o escritor de e-mail e pelo
+   * `parseNiche` — que hoje podem confiar que sempre há texto. O valor
+   * provisório é ruim para prospectar, mas a campanha também não prospecta
+   * nada antes da proposta ser aprovada: `filters` está nulo e
+   * `descobrirEmpresas` não roda sem filtro útil.
+   */
+  const proposito = peloProposito ? (corpo.solutionPurpose as string) : null;
+
   const input: NovaCampanha = {
     tenantId: deps.tenantId,
     name: corpo.name as string,
-    nicheDescription: corpo.nicheDescription as string,
-    offerDescription: corpo.offerDescription as string,
+    nicheDescription: textoNaoVazio(corpo.nicheDescription)
+      ? corpo.nicheDescription
+      : proposito!,
+    offerDescription: textoNaoVazio(corpo.offerDescription)
+      ? corpo.offerDescription
+      : proposito!,
+    solutionPurpose: proposito ?? undefined,
     schedulingLink: corpo.schedulingLink as string,
     senderFirstName: corpo.senderFirstName as string,
     tone: textoNaoVazio(corpo.tone) ? corpo.tone : undefined,

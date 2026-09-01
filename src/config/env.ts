@@ -55,6 +55,15 @@ const EnvSchema = z.object({
    * aleatória: trocá-la invalida todas as sessões abertas de uma vez.
    */
   PAINEL_SENHA: z.string().optional().default(""),
+  /**
+   * Chave da Lusha. Preenchida, ela substitui a Hunter na busca do decisor —
+   * a descoberta de empresas segue na Casa dos Dados de qualquer forma.
+   *
+   * Opcional e vazia por padrão pelo mesmo motivo de `PAINEL_SENHA`: exigi-la
+   * faria todo deploy existente parar de subir no instante em que este código
+   * chegasse ao servidor. Vazia, nada muda — a Hunter continua sendo usada.
+   */
+  LUSHA_API_KEY: z.string().optional().default(""),
 });
 
 export type Env = z.infer<typeof EnvSchema>;
