@@ -6,6 +6,7 @@ const EnvSchema = z.object({
   SUPABASE_SERVICE_ROLE_KEY: z.string().min(1),
   DATABASE_URL: z.string().min(1),
   HUNTER_API_KEY: z.string().min(1),
+  CASA_DOS_DADOS_API_KEY: z.string().min(1),
   INSTANTLY_API_KEY: z.string().min(1),
   INSTANTLY_CAMPAIGN_ID: z.string().min(1),
   TENANT_ID: z.string().min(1),

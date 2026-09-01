@@ -26,6 +26,7 @@ function app() {
     segredoCalcom: SEGREDO_CALCOM,
     segredoN8n: "segredo-n8n",
     apiKeyHunter: "chave-hunter",
+    apiKeyCasaDosDados: "chave-casa-dos-dados",
   });
 }
 

@@ -5,6 +5,7 @@ import { tratarWebhookCalcom } from "./handlers/calcom-webhook.js";
 import { tratarProcessarResposta } from "./handlers/processar-resposta.js";
 import { tratarEnviarLote } from "./handlers/enviar-lote.js";
 import { tratarEnriquecerLote } from "./handlers/enriquecer-lote.js";
+import { tratarDescobrirEmpresas } from "./handlers/descobrir-empresas.js";
 
 export interface DepsDoApp {
   db: Db;
@@ -13,6 +14,7 @@ export interface DepsDoApp {
   segredoCalcom: string;
   segredoN8n: string;
   apiKeyHunter: string;
+  apiKeyCasaDosDados: string;
 }
 
 /**
@@ -71,6 +73,17 @@ export function criarApp(deps: DepsDoApp): Hono {
       tenantId: deps.tenantId,
       segredo: deps.segredoN8n,
       apiKeyHunter: deps.apiKeyHunter,
+    }),
+  );
+
+  // Rota lenta: busca empresas novas na Casa dos Dados a partir do filtro de
+  // nicho da campanha. O n8n agenda, antes do lote de enriquecimento.
+  app.post("/campaigns/:id/descobrir-empresas", (c) =>
+    tratarDescobrirEmpresas(c.req.raw, c.req.param("id"), {
+      db: deps.db,
+      tenantId: deps.tenantId,
+      segredo: deps.segredoN8n,
+      apiKeyCasaDosDados: deps.apiKeyCasaDosDados,
     }),
   );
 

@@ -7,6 +7,7 @@ const validSource = {
   SUPABASE_SERVICE_ROLE_KEY: "chave-de-servico",
   DATABASE_URL: "postgresql://x",
   HUNTER_API_KEY: "chave",
+  CASA_DOS_DADOS_API_KEY: "chave-casa-dos-dados",
   INSTANTLY_API_KEY: "chave-instantly",
   INSTANTLY_CAMPAIGN_ID: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
   TENANT_ID: "11111111-1111-1111-1111-111111111111",

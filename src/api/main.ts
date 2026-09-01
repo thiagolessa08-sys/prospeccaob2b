@@ -12,6 +12,7 @@ const app = criarApp({
   segredoCalcom: ambiente.CALCOM_WEBHOOK_SECRET,
   segredoN8n: ambiente.N8N_SHARED_SECRET,
   apiKeyHunter: ambiente.HUNTER_API_KEY,
+  apiKeyCasaDosDados: ambiente.CASA_DOS_DADOS_API_KEY,
 });
 
 const porta = Number(process.env.PORT ?? 3000);
