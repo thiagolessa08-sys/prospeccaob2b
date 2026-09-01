@@ -53,9 +53,19 @@ async function postar<T>(
     metodo: "POST",
     headers: { api_key: apiKey, "content-type": "application/json" },
     corpo: JSON.stringify(corpo),
-    // 429 e 5xx já são repetidos pelo `fetchJson`. 402 (sem crédito) e 401
-    // (chave inválida) não são: repetir não conserta e só queima quota.
-    tentativas: 3,
+    /**
+     * UMA tentativa. Sem repetição.
+     *
+     * O padrão do `fetchJson` repete 429, o que faz sentido para limite por
+     * segundo — espera e passa. O limite da Lusha é DIÁRIO: 100 chamadas, com
+     * reset em até 24 h. Repetir ali não tem como dar certo, e cada repetição
+     * consome mais uma da cota que acabou de estourar.
+     *
+     * Foi o que aconteceu: 60 empresas × 2 chamadas já encostavam no teto, e
+     * o retry triplicou cada 429 até queimar o dia inteiro — com a tela
+     * dizendo "nenhum decisor encontrado".
+     */
+    tentativas: 1,
   });
 }
 
@@ -63,6 +73,16 @@ async function postar<T>(
 const SEM_CREDITO = 402;
 /** Contato bloqueado por GDPR. Não é falha nossa nem da chave. */
 const BLOQUEADO_POR_LEI = 451;
+/** Cota estourada. Na Lusha é DIÁRIA, não por segundo. */
+const COTA_ESTOURADA = 429;
+
+/** "Reset in 82810 seconds" → "23 h". O número cru não diz nada a ninguém. */
+function quandoVolta(corpo: string): string {
+  const achado = /Reset in (\d+) seconds/i.exec(corpo);
+  if (!achado) return "";
+  const horas = Math.round(Number(achado[1]) / 3600);
+  return horas > 0 ? ` Libera em cerca de ${horas} h.` : " Libera em menos de 1 h.";
+}
 
 /**
  * Traduz os erros que têm significado de negócio.
@@ -77,11 +97,25 @@ const BLOQUEADO_POR_LEI = 451;
  */
 function traduzirErro(erro: unknown): never | [] {
   if (erro instanceof HttpError && erro.status === BLOQUEADO_POR_LEI) return [];
+
   if (erro instanceof HttpError && erro.status === SEM_CREDITO) {
     throw new Error(
       "Lusha recusou por falta de crédito (HTTP 402). O enriquecimento para até a conta ser recarregada.",
     );
   }
+
+  if (erro instanceof HttpError && erro.status === COTA_ESTOURADA) {
+    /**
+     * Limite DIÁRIO de chamadas, não de velocidade. Merece a tradução mais
+     * clara das três, porque é o único que não se resolve mexendo em nada:
+     * não é chave, não é crédito, não é código — é esperar.
+     */
+    throw new Error(
+      `Lusha: cota diária de chamadas esgotada (HTTP 429).${quandoVolta(erro.corpo)} ` +
+        "Cada empresa consome 2 chamadas (buscar + revelar), então um lote de 20 usa 40.",
+    );
+  }
+
   throw erro;
 }
 

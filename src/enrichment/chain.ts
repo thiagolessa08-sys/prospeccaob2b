@@ -65,6 +65,15 @@ export interface DepsEnriquecimento {
   acharPorNome: typeof acharEmailPorNome;
   buscarDominio: typeof buscarNoDominio;
   verificar: typeof verificarEmail;
+  /**
+   * Como rotular as tentativas deste fornecedor.
+   *
+   * Estas duas strings já foram literais `"hunter_finder"` e `"hunter_domain"`
+   * espalhados pela cadeia. Com a Lusha ligada, toda tentativa dela aparecia
+   * na tela como Hunter — e o diagnóstico apontou para o fornecedor errado
+   * durante quatro rodadas, enquanto o erro real vinha de `api.lusha.com`.
+   */
+  rotulos?: { finder: FonteDoDecisor; domain: FonteDoDecisor };
 }
 
 const DEPS_PADRAO: DepsEnriquecimento = {
@@ -98,6 +107,8 @@ export async function enriquecerDecisor(
   deps: DepsEnriquecimento = DEPS_PADRAO,
 ): Promise<ResultadoEnriquecimento> {
   const tentativas: TentativaDeFonte[] = [];
+  const FONTE_FINDER = deps.rotulos?.finder ?? "hunter_finder";
+  const FONTE_DOMINIO = deps.rotulos?.domain ?? "hunter_domain";
 
   let empresa: DadosDaEmpresa | null;
 
@@ -203,7 +214,7 @@ export async function enriquecerDecisor(
 
   if (!dominio && !nomeDaEmpresa) {
     tentativas.push({
-      fonte: "hunter_finder",
+      fonte: FONTE_FINDER,
       resultado: "vazio",
       detalhe: "empresa sem site, sem e-mail na Receita e sem razão social",
     });
@@ -224,11 +235,11 @@ export async function enriquecerDecisor(
           apiKey: entrada.apiKey,
         });
         if (!achado?.email) {
-          tentativas.push({ fonte: "hunter_finder", resultado: "vazio", detalhe: socio.nome });
+          tentativas.push({ fonte: FONTE_FINDER, resultado: "vazio", detalhe: socio.nome });
           continue;
         }
         if (ehEmailGenerico(achado.email)) {
-          tentativas.push({ fonte: "hunter_finder", resultado: "generico", detalhe: achado.email });
+          tentativas.push({ fonte: FONTE_FINDER, resultado: "generico", detalhe: achado.email });
           continue;
         }
         const comCargo: CandidatoDecisor = {
@@ -239,7 +250,7 @@ export async function enriquecerDecisor(
         if (aprovado) return { achou: true, candidato: aprovado, tentativas };
       } catch (erro) {
         tentativas.push({
-          fonte: "hunter_finder",
+          fonte: FONTE_FINDER,
           resultado: "erro",
           detalhe: erro instanceof Error ? erro.message : String(erro),
         });
@@ -267,7 +278,7 @@ export async function enriquecerDecisor(
     const descartados = encontrados.length - pessoais.length;
     if (descartados > 0) {
       tentativas.push({
-        fonte: "hunter_domain",
+        fonte: FONTE_DOMINIO,
         resultado: "generico",
         detalhe: `${descartados} caixa(s) compartilhada(s) descartada(s)`,
       });
@@ -275,7 +286,7 @@ export async function enriquecerDecisor(
 
     if (pessoais.length === 0) {
       if (encontrados.length === 0) {
-        tentativas.push({ fonte: "hunter_domain", resultado: "vazio" });
+        tentativas.push({ fonte: FONTE_DOMINIO, resultado: "vazio" });
       }
     } else {
       const melhor = [...pessoais].sort((a, b) => b.confianca - a.confianca)[0]!;
@@ -284,7 +295,7 @@ export async function enriquecerDecisor(
     }
   } catch (erro) {
     tentativas.push({
-      fonte: "hunter_domain",
+      fonte: FONTE_DOMINIO,
       resultado: "erro",
       detalhe: erro instanceof Error ? erro.message : String(erro),
     });

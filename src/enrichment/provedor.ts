@@ -47,6 +47,7 @@ export function escolherProvedor(
       deps: {
         buscarEmpresa: buscarEmpresaPorCnpj,
         acharPorNome: lushaPorNome,
+        rotulos: { finder: "lusha_finder", domain: "lusha_domain" },
         buscarDominio: lushaPorDominio,
         verificar: lushaVerifica,
       },
@@ -59,6 +60,7 @@ export function escolherProvedor(
     deps: {
       buscarEmpresa: buscarEmpresaPorCnpj,
       acharPorNome: hunterPorNome,
+      rotulos: { finder: "hunter_finder", domain: "hunter_domain" },
       buscarDominio: hunterPorDominio,
       verificar: hunterVerifica,
     },

@@ -308,3 +308,46 @@ describe("verificarEmail (Lusha)", () => {
     expect(await verificarEmail()).toEqual({ status: "unknown", score: 0 });
   });
 });
+
+describe("cota diária", () => {
+  it("traduz o 429 dizendo que é cota do dia, com o tempo até liberar", async () => {
+    // O erro que custou o dia inteiro de cota. "HTTP 429" sozinho parece
+    // limite de velocidade — algo que passa em segundos. O da Lusha é diário.
+    const fetchFalso = vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          statusCode: 429,
+          message: "Daily API rate limit exceeded. Limit: 100 calls per day. Reset in 7200 seconds.",
+        }),
+        { status: 429 },
+      ),
+    );
+
+    await expect(
+      buscarNoDominio(
+        { dominio: "alfa.com.br", apiKey: "k" },
+        { fetch: fetchFalso as unknown as typeof fetch },
+      ),
+    ).rejects.toThrow(/cota diária/i);
+
+    // E uma chamada só: repetir um limite diário nunca dá certo e consome
+    // mais uma da cota que acabou de estourar.
+    expect(fetchFalso).toHaveBeenCalledTimes(1);
+  });
+
+  it("converte os segundos do reset em horas", async () => {
+    const fetchFalso = vi.fn(async () =>
+      new Response(
+        JSON.stringify({ message: "Daily API rate limit exceeded. Reset in 82810 seconds." }),
+        { status: 429 },
+      ),
+    );
+
+    await expect(
+      buscarNoDominio(
+        { dominio: "alfa.com.br", apiKey: "k" },
+        { fetch: fetchFalso as unknown as typeof fetch },
+      ),
+    ).rejects.toThrow(/23 h/);
+  });
+});
