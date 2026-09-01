@@ -64,3 +64,17 @@ export function escolherProvedor(
     },
   };
 }
+
+/**
+ * Como o painel descreve o fornecedor em uso, incluindo o caso sem chave.
+ *
+ * "hunter" com a chave vazia não é o padrão funcionando: é o sistema caindo
+ * no fornecedor que ninguém configurou, e cada empresa vai falhar com 401
+ * disfarçado de "nenhum decisor encontrado". A etiqueta precisa dizer isso na
+ * cara, porque foi exatamente essa confusão que custou 20 empresas queimadas
+ * e um diagnóstico inteiro apontando para o lado errado.
+ */
+export function descreverProvedor(chaves: ChavesDeEnriquecimento): string {
+  const escolhido = escolherProvedor(chaves);
+  return escolhido.apiKey.trim() ? escolhido.nome : `${escolhido.nome} (SEM CHAVE)`;
+}

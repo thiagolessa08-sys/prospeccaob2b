@@ -77,3 +77,19 @@ describe("briefingEmTexto", () => {
     expect(briefingEmTexto({ dores: [null, "", "  ", "válida"] })).toContain("- válida");
   });
 });
+
+describe("descreverProvedor", () => {
+  it("avisa quando cai na Hunter sem chave", async () => {
+    // O caso que custou 20 empresas: HUNTER_API_KEY no placeholder, LUSHA
+    // vazia, e toda empresa falhando com 401 disfarçado de "nenhum decisor
+    // encontrado". A etiqueta precisa dizer isso antes de alguém clicar.
+    const { descreverProvedor } = await import("../../src/enrichment/provedor.js");
+    expect(descreverProvedor({ hunter: "", lusha: "" })).toContain("SEM CHAVE");
+  });
+
+  it("nomeia o fornecedor configurado, sem alarme", async () => {
+    const { descreverProvedor } = await import("../../src/enrichment/provedor.js");
+    expect(descreverProvedor({ hunter: "", lusha: "chave-lusha" })).toBe("lusha");
+    expect(descreverProvedor({ hunter: "chave-hunter", lusha: "" })).toBe("hunter");
+  });
+});

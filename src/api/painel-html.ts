@@ -303,6 +303,15 @@ function desenharCampanhas(campanhas) {
     html += '<div class="linha"><strong>' + esc(c.name) + "</strong>";
     html += '<span class="etiqueta">' + esc(c.status) + "</span>";
     html += '<span class="etiqueta">' + esc(c.send_mode) + "</span>";
+    // Qual fornecedor vai procurar o decisor. Sem isto na tela, "hunter com
+    // chave de mentira" e "lusha configurada" dão o mesmo sintoma — todas as
+    // empresas sem decisor — e o diagnóstico aponta para o lado errado.
+    if (c.provedor_de_enriquecimento) {
+      var semChave = c.provedor_de_enriquecimento.indexOf("SEM CHAVE") >= 0;
+      html += '<span class="etiqueta" style="color:'
+        + (semChave ? "var(--erro)" : "var(--fraco)") + '">contatos: '
+        + esc(c.provedor_de_enriquecimento) + "</span>";
+    }
     html += c.tem_filtros
       ? '<span class="etiqueta">filtros ok</span>'
       : '<span class="etiqueta" style="color:var(--alerta)">sem filtros</span>';

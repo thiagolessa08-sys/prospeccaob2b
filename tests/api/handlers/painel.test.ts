@@ -38,7 +38,12 @@ function comSegredo(url: string) {
 }
 
 function deps() {
-  return { db: banco.db, tenantId: banco.tenantId, segredo: SEGREDO };
+  return {
+    db: banco.db,
+    tenantId: banco.tenantId,
+    segredo: SEGREDO,
+    provedorDeEnriquecimento: "hunter",
+  };
 }
 
 /** Cria campanha com uma empresa e um lead, e devolve os três ids. */

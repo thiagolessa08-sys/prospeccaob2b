@@ -22,6 +22,8 @@ export interface DepsPainelHttp {
   db: Db;
   tenantId: string;
   segredo: string;
+  /** Como o painel anuncia o fornecedor de enriquecimento em uso. */
+  provedorDeEnriquecimento: string;
 }
 
 /** Teto de linhas por página do painel. Ninguém lê mil leads numa tela. */
@@ -95,6 +97,7 @@ export async function tratarResumoDoPainel(
          */
         filtros: campanha.filters,
         tem_filtros: campanha.filters !== null,
+        provedor_de_enriquecimento: deps.provedorDeEnriquecimento,
         tem_proposta: campanha.proposal !== null,
         proposta_aprovada_em: campanha.proposal_approved_at,
         /**

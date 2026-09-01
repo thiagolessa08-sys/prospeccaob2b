@@ -16,7 +16,17 @@ const EnvSchema = z.object({
   ANTHROPIC_API_KEY: z.string().min(1),
   /** Connection string do Postgres. É por aqui que TODA a persistência passa. */
   DATABASE_URL: z.string().min(1),
-  HUNTER_API_KEY: z.string().min(1),
+  /**
+   * Chave da Hunter. Opcional: quem usa a Lusha não tem a Hunter, e exigir a
+   * chave dela obrigaria a inventar um valor de mentira só para o processo
+   * subir — que foi exatamente o que aconteceu, e produziu 401 disfarçado de
+   * "nenhum decisor encontrado".
+   *
+   * Vazia com `LUSHA_API_KEY` preenchida é a configuração normal de quem usa
+   * a Lusha. Vazia com as duas vazias não há como enriquecer, e o painel
+   * mostra isso na etiqueta do fornecedor.
+   */
+  HUNTER_API_KEY: z.string().optional().default(""),
   CASA_DOS_DADOS_API_KEY: z.string().min(1),
   INSTANTLY_API_KEY: z.string().min(1),
   INSTANTLY_CAMPAIGN_ID: z.string().min(1),

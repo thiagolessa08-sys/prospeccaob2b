@@ -32,6 +32,7 @@ import {
   tratarSaidaDoPainel,
 } from "./handlers/painel-sessao.js";
 import { sessaoConfere } from "./sessao-painel.js";
+import { descreverProvedor } from "../enrichment/provedor.js";
 
 export interface DepsDoApp {
   db: Db;
@@ -89,6 +90,17 @@ async function comoOperador(bruta: Request, deps: DepsDoApp): Promise<Request> {
 
 export function criarApp(deps: DepsDoApp): Hono {
   const app = new Hono();
+
+  /**
+   * Calculado uma vez: a escolha do fornecedor não muda em tempo de execução,
+   * e o painel precisa anunciá-la. Sem essa etiqueta na tela, "hunter com
+   * chave de mentira" e "lusha configurada" produzem o mesmo sintoma — todas
+   * as empresas sem decisor — e o diagnóstico aponta para o fornecedor errado.
+   */
+  const provedorEmUso = descreverProvedor({
+    hunter: deps.apiKeyHunter,
+    lusha: deps.apiKeyLusha,
+  });
 
   /**
    * Sem isto, qualquer exceção não tratada vira um "Internal Server Error"
@@ -268,6 +280,7 @@ export function criarApp(deps: DepsDoApp): Hono {
       db: deps.db,
       tenantId: deps.tenantId,
       segredo: deps.segredoN8n,
+      provedorDeEnriquecimento: provedorEmUso,
     }),
   );
 
@@ -276,6 +289,7 @@ export function criarApp(deps: DepsDoApp): Hono {
       db: deps.db,
       tenantId: deps.tenantId,
       segredo: deps.segredoN8n,
+      provedorDeEnriquecimento: provedorEmUso,
     }),
   );
 
@@ -284,6 +298,7 @@ export function criarApp(deps: DepsDoApp): Hono {
       db: deps.db,
       tenantId: deps.tenantId,
       segredo: deps.segredoN8n,
+      provedorDeEnriquecimento: provedorEmUso,
     }),
   );
 
@@ -292,6 +307,7 @@ export function criarApp(deps: DepsDoApp): Hono {
       db: deps.db,
       tenantId: deps.tenantId,
       segredo: deps.segredoN8n,
+      provedorDeEnriquecimento: provedorEmUso,
     }),
   );
 
@@ -300,6 +316,7 @@ export function criarApp(deps: DepsDoApp): Hono {
       db: deps.db,
       tenantId: deps.tenantId,
       segredo: deps.segredoN8n,
+      provedorDeEnriquecimento: provedorEmUso,
     }),
   );
 
