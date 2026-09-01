@@ -59,3 +59,32 @@ export async function listarEventosDoLead(
   );
   return rows;
 }
+
+/**
+ * Trilha da campanha: o que aconteceu fora do escopo de um lead.
+ *
+ * `falha_na_descoberta`, `falha_ao_gerar_filtros`, `falha_ao_propor_campanha`,
+ * `tentativa_de_descoberta` — todos gravam com `lead_id` nulo e o id da
+ * campanha dentro do payload, porque acontecem antes de existir lead algum.
+ * Sem esta leitura eles só existiam no banco, e a tela dizia "falhou" sem
+ * conseguir dizer por quê.
+ *
+ * Filtra por `payload->>'campaignId'`, comparando texto com texto: o campo
+ * dentro do `jsonb` é string e o parâmetro também.
+ */
+export async function listarEventosDaCampanha(
+  db: Db,
+  tenantId: string,
+  campaignId: string,
+  limite: number,
+): Promise<EventoDoLead[]> {
+  const { rows } = await db.query<EventoDoLead>(
+    `select id, kind, payload, created_at
+       from events
+      where tenant_id = $1 and payload->>'campaignId' = $2
+      order by created_at desc
+      limit $3`,
+    [tenantId, campaignId, limite],
+  );
+  return rows;
+}

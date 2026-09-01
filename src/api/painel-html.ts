@@ -342,6 +342,7 @@ function desenharCampanhas(campanhas) {
     }
     html += '<button data-empresas="' + esc(c.id) + '">Ver empresas</button>';
     html += '<button data-leads="' + esc(c.id) + '">Ver leads</button>';
+    html += '<button data-eventos="' + esc(c.id) + '">Ver eventos</button>';
     html += "</div>";
     html += '<div id="saida-' + esc(c.id) + '"></div>';
     html += '<div id="leads-' + esc(c.id) + '"></div>';
@@ -433,6 +434,52 @@ async function dispararAcao(botao, id, rota) {
   } finally {
     botao.disabled = false;
   }
+}
+
+/**
+ * A trilha da campanha: o que cada acao registrou, incluindo as falhas.
+ *
+ * E a tela que responde "por que nao funcionou". Antes, uma falha na busca da
+ * Casa dos Dados dizia so "falha na busca" e o motivo real ficava no banco.
+ */
+async function verEventos(id) {
+  var alvo = $("leads-" + id);
+  alvo.innerHTML = '<p class="vazio">Carregando eventos...</p>';
+  var eventos;
+  try {
+    eventos = await api("/painel/campanhas/" + id + "/eventos");
+  } catch (e) {
+    if (e.message !== "401") alvo.innerHTML = '<p class="aviso">' + esc(e.message) + "</p>";
+    return;
+  }
+
+  if (!eventos.length) {
+    alvo.innerHTML = '<p class="vazio">Nenhum evento nesta campanha ainda.</p>';
+    return;
+  }
+
+  var html = '<div class="rolagem"><table><thead><tr><th>Quando</th><th>O qu&ecirc;</th>';
+  html += "<th>Detalhe</th></tr></thead><tbody>";
+
+  for (var i = 0; i < eventos.length; i++) {
+    var ev = eventos[i];
+    var p = ev.payload || {};
+    // A falha guarda o motivo em "erro"; a tentativa guarda contagens. Mostrar
+    // o texto quando existe evita obrigar a ler JSON para achar a causa.
+    var resumo = p.erro || p.motivo || "";
+    var falhou = ev.kind.indexOf("falha") === 0;
+
+    html += "<tr><td>" + dataCurta(ev.created_at) + "</td>";
+    html += '<td style="color:' + (falhou ? "var(--erro)" : "var(--fraco)") + '">';
+    html += esc(ev.kind) + "</td><td>";
+    if (resumo) html += '<div style="margin-bottom:4px">' + esc(resumo) + "</div>";
+    html += '<details><summary class="vazio" style="cursor:pointer;font-size:12px">';
+    html += "ver payload</summary><pre style=\\"margin:4px 0 0\\">";
+    html += esc(JSON.stringify(p, null, 2)) + "</pre></details>";
+    html += "</td></tr>";
+  }
+
+  alvo.innerHTML = html + "</tbody></table></div>";
 }
 
 /** Empresas descobertas, com o motivo de quem ficou sem decisor. */
@@ -791,6 +838,7 @@ document.addEventListener("click", function (e) {
   if (b && b.dataset.propor) return propor(b, b.dataset.propor);
   if (b && b.dataset.proposta) return abrirProposta(b.dataset.proposta);
   if (b && b.dataset.empresas) return verEmpresas(b.dataset.empresas);
+  if (b && b.dataset.eventos) return verEventos(b.dataset.eventos);
   if (b && b.dataset.leads) return verLeads(b.dataset.leads);
   var tr = e.target.closest("tr[data-lead]");
   if (tr) return verLead(tr.dataset.lead);

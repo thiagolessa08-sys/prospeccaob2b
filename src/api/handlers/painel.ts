@@ -12,7 +12,10 @@ import {
   listarLeadsDaCampanha,
 } from "../../db/repositories/leads.js";
 import { carregarConversa } from "../../db/repositories/messages.js";
-import { listarEventosDoLead } from "../../db/repositories/events.js";
+import {
+  listarEventosDoLead,
+  listarEventosDaCampanha,
+} from "../../db/repositories/events.js";
 import { HEADER_SEGREDO_N8N } from "./processar-resposta.js";
 
 export interface DepsPainelHttp {
@@ -194,4 +197,33 @@ export async function tratarEmpresasDaCampanha(
     limiteDaQuery(req),
   );
   return json(empresas);
+}
+
+/**
+ * A trilha da campanha: falha ao propor, ao gerar filtros, ao descobrir.
+ *
+ * Esses eventos nascem com `lead_id` nulo — acontecem antes de existir lead —
+ * e por isso não apareciam em lugar nenhum. Foi o que fez uma falha na busca
+ * da Casa dos Dados virar um "falha na busca" sem causa na tela, com o motivo
+ * real gravado no banco e invisível.
+ */
+export async function tratarEventosDaCampanha(
+  req: Request,
+  campaignId: string,
+  deps: DepsPainelHttp,
+): Promise<Response> {
+  if (!segredoConfere(req.headers.get(HEADER_SEGREDO_N8N), deps.segredo)) {
+    return new Response("segredo inválido", { status: 401 });
+  }
+
+  const recusa = idInvalido(campaignId);
+  if (recusa) return recusa;
+
+  const eventos = await listarEventosDaCampanha(
+    deps.db,
+    deps.tenantId,
+    campaignId,
+    limiteDaQuery(req),
+  );
+  return json(eventos);
 }

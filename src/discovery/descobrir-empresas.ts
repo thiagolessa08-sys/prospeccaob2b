@@ -9,12 +9,15 @@ import {
   type EmpresaEncontrada,
 } from "./casa-dos-dados.js";
 import type { FetchLike } from "../http/fetch-json.js";
+import { semSegredos } from "../config/redigir.js";
 
 export interface ResultadoDaDescoberta {
   encontradas: number;
   salvas: number;
   ignoradas: number;
   paginas: number;
+  /** A mensagem do fornecedor quando a busca falhou. Ausente no caminho feliz. */
+  erro?: string;
   motivo: string;
 }
 
@@ -84,22 +87,35 @@ export async function descobrirEmpresas(
       // "continue da página X" de novo com segurança, porque resultados
       // novos podem ter entrado na base da Casa dos Dados entre uma chamada
       // e outra e deslocado a paginação.
+      const bruto = erro instanceof Error ? erro.message : String(erro);
+
+      /**
+       * O erro vai junto do motivo, e não só para `events`.
+       *
+       * Antes ficava só no evento, e a tela dizia "falha na busca" — que não
+       * distingue chave inválida de fornecedor fora do ar, e manda o operador
+       * abrir o banco para descobrir qual dos dois. Passa por `semSegredos`
+       * porque a mensagem do HttpError carrega o corpo da resposta, e resposta
+       * de erro de API às vezes ecoa a credencial recebida.
+       */
+      const mensagem = semSegredos(bruto);
+
       await registrarEvento(db, {
         tenantId,
         leadId: null,
         kind: "falha_na_descoberta",
-        payload: {
-          campaignId,
-          pagina,
-          erro: erro instanceof Error ? erro.message : String(erro),
-        },
+        payload: { campaignId, pagina, erro: mensagem },
       }).catch(() => {});
+
       return {
         encontradas,
         salvas,
         ignoradas,
         paginas: pagina - 1,
-        motivo: `Interrompida na página ${pagina} por falha na busca; ${salvas} salva(s) até aqui.`,
+        erro: mensagem,
+        motivo:
+          `Interrompida na página ${pagina} por falha na busca da Casa dos Dados; ` +
+          `${salvas} salva(s) até aqui. Erro: ${mensagem}`,
       };
     }
 

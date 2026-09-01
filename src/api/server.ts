@@ -19,6 +19,7 @@ import {
   tratarLeadsDaCampanha,
   tratarDetalheDoLead,
   tratarEmpresasDaCampanha,
+  tratarEventosDaCampanha,
 } from "./handlers/painel.js";
 import {
   tratarProporCampanha,
@@ -280,6 +281,14 @@ export function criarApp(deps: DepsDoApp): Hono {
 
   app.get("/painel/campanhas/:id/empresas", async (c) =>
     tratarEmpresasDaCampanha(await comoOperador(c.req.raw, deps), c.req.param("id"), {
+      db: deps.db,
+      tenantId: deps.tenantId,
+      segredo: deps.segredoN8n,
+    }),
+  );
+
+  app.get("/painel/campanhas/:id/eventos", async (c) =>
+    tratarEventosDaCampanha(await comoOperador(c.req.raw, deps), c.req.param("id"), {
       db: deps.db,
       tenantId: deps.tenantId,
       segredo: deps.segredoN8n,
