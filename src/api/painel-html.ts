@@ -334,10 +334,13 @@ function desenharCampanhas(campanhas) {
     }
     html += "</div>";
 
+    html += desenharFiltros(c.filtros);
+
     html += '<div class="linha">';
     for (var k = 0; k < ROTAS.length; k++) {
       html += '<button data-acao="' + ROTAS[k].rota + '" data-id="' + esc(c.id) + '">' + ROTAS[k].nome + "</button>";
     }
+    html += '<button data-empresas="' + esc(c.id) + '">Ver empresas</button>';
     html += '<button data-leads="' + esc(c.id) + '">Ver leads</button>';
     html += "</div>";
     html += '<div id="saida-' + esc(c.id) + '"></div>';
@@ -345,6 +348,64 @@ function desenharCampanhas(campanhas) {
     html += "</div>";
   }
   alvo.innerHTML = html;
+}
+
+/**
+ * Mostra os filtros que a IA gerou, e nao so "tem filtros".
+ *
+ * Um botao que responde "pronto" sem dizer o que fez obriga a abrir o banco
+ * para conferir. Os campos que a Casa dos Dados NAO usa para filtrar ficam
+ * marcados: sem isso, ler "SAP" na lista faz parecer que a busca vai
+ * restringir por ERP, quando ela nao tem esse dado.
+ */
+function desenharFiltros(f) {
+  if (!f) return "";
+
+  var partes = "";
+  partes += chips("CNAEs", f.cnaes);
+  partes += chips("UFs", f.ufs);
+  partes += chips("Cidades", f.cities);
+
+  var porte = [];
+  if (f.min_employees) porte.push("min " + f.min_employees);
+  if (f.max_employees) porte.push("max " + f.max_employees);
+  if (porte.length) partes += chips("Funcion&aacute;rios", porte);
+
+  partes += chips("Cargos-alvo", f.target_roles);
+  partes += chips("Palavras-chave (n&atilde;o filtram a busca)", f.keywords);
+
+  if (!partes) return "";
+  return '<div class="cartao" style="margin:10px 0;background:var(--codigo)">' + partes + "</div>";
+}
+
+function chips(titulo, itens) {
+  if (!itens || !itens.length) return "";
+  var html = '<div style="margin-bottom:6px"><span class="vazio" style="font-size:12px">'
+    + titulo + ":</span> ";
+  for (var i = 0; i < itens.length; i++) {
+    html += '<span class="etiqueta" style="margin-right:4px">' + esc(itens[i]) + "</span>";
+  }
+  return html + "</div>";
+}
+
+/**
+ * O retorno de cada rota em portugues, e nao o JSON cru.
+ *
+ * Os handlers ja devolvem um campo "motivo" escrito para humano. O JSON
+ * completo continua disponivel, recolhido, para quando algo nao bate.
+ */
+function resultadoLegivel(r) {
+  if (!r || typeof r !== "object") return "<pre>" + esc(String(r)) + "</pre>";
+
+  var linha = "";
+  if (typeof r.motivo === "string") linha = esc(r.motivo);
+  else if (r.gerado === false || r.proposto === false) linha = esc(r.erro || "não deu certo");
+  else if (typeof r.erro === "string") linha = esc(r.erro);
+
+  var detalhe = "<details><summary class=\\"vazio\\" style=\\"cursor:pointer;font-size:12px\\">"
+    + "ver resposta completa</summary><pre>" + esc(JSON.stringify(r, null, 2)) + "</pre></details>";
+
+  return (linha ? '<p style="margin:8px 0 0">' + linha + "</p>" : "") + detalhe;
 }
 
 /**
@@ -358,13 +419,62 @@ async function dispararAcao(botao, id, rota) {
   saida.innerHTML = "<pre>Rodando " + esc(rota) + "...</pre>";
   try {
     var r = await api("/campaigns/" + id + "/" + rota, { method: "POST" });
-    saida.innerHTML = "<pre>" + esc(JSON.stringify(r, null, 2)) + "</pre>";
+    saida.innerHTML = resultadoLegivel(r);
     await carregar();
+    // carregar() redesenha os cartoes e apaga a saida. Repor depois e o que
+    // deixa a resposta na tela junto dos numeros ja atualizados.
+    var novaSaida = $("saida-" + id);
+    if (novaSaida) novaSaida.innerHTML = resultadoLegivel(r);
   } catch (e) {
-    if (e.message !== "401") saida.innerHTML = '<pre class="aviso">' + esc(e.message) + "</pre>";
+    if (e.message !== "401") {
+      var alvo = $("saida-" + id);
+      if (alvo) alvo.innerHTML = '<pre class="aviso">' + esc(e.message) + "</pre>";
+    }
   } finally {
     botao.disabled = false;
   }
+}
+
+/** Empresas descobertas, com o motivo de quem ficou sem decisor. */
+async function verEmpresas(id) {
+  var alvo = $("leads-" + id);
+  alvo.innerHTML = '<p class="vazio">Carregando empresas...</p>';
+  var empresas;
+  try {
+    empresas = await api("/painel/campanhas/" + id + "/empresas");
+  } catch (e) {
+    if (e.message !== "401") alvo.innerHTML = '<p class="aviso">' + esc(e.message) + "</p>";
+    return;
+  }
+
+  if (!empresas.length) {
+    alvo.innerHTML = '<p class="vazio">Nenhuma empresa ainda. Rode Descobrir empresas.</p>';
+    return;
+  }
+
+  var html = '<div class="rolagem"><table><thead><tr><th>Empresa</th><th>CNPJ</th>';
+  html += "<th>Cidade/UF</th><th>Func.</th><th>Status</th><th>Por qu&ecirc;</th>";
+  html += "</tr></thead><tbody>";
+
+  for (var i = 0; i < empresas.length; i++) {
+    var e = empresas[i];
+    var t = e.ultima_tentativa || {};
+    var cor =
+      e.enrichment_status === "enriched" ? "var(--ok)" :
+      e.enrichment_status === "failed" ? "var(--erro)" : "var(--fraco)";
+
+    html += "<tr>";
+    html += "<td>" + esc(e.trade_name || e.legal_name) + "</td>";
+    html += "<td>" + esc(e.cnpj || "—") + "</td>";
+    html += "<td>" + esc([e.city, e.uf].filter(Boolean).join("/") || "—") + "</td>";
+    html += "<td>" + (e.employee_count === null ? "—" : e.employee_count) + "</td>";
+    html += '<td style="color:' + cor + '">' + esc(e.enrichment_status) + "</td>";
+    html += "<td>" + esc(t.motivo || (e.enrichment_status === "pending" ? "ainda não tentada" : "—"));
+    if (t.provedor) html += ' <span class="etiqueta">' + esc(t.provedor) + "</span>";
+    html += "</td></tr>";
+  }
+
+  alvo.innerHTML = html + "</tbody></table></div>";
 }
 
 async function verLeads(id) {
@@ -680,6 +790,7 @@ document.addEventListener("click", function (e) {
   if (b && b.dataset.acao) return dispararAcao(b, b.dataset.id, b.dataset.acao);
   if (b && b.dataset.propor) return propor(b, b.dataset.propor);
   if (b && b.dataset.proposta) return abrirProposta(b.dataset.proposta);
+  if (b && b.dataset.empresas) return verEmpresas(b.dataset.empresas);
   if (b && b.dataset.leads) return verLeads(b.dataset.leads);
   var tr = e.target.closest("tr[data-lead]");
   if (tr) return verLead(tr.dataset.lead);

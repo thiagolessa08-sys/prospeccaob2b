@@ -116,6 +116,11 @@ export async function enriquecerLote(
           // Hunter e Lusha se misturam e a comparação de acerto e custo
           // entre os dois — o motivo de existir a troca — fica impossível.
           provedor: provedor.nome,
+          // O motivo em uma frase, ao lado das tentativas cruas. `tentativas`
+          // serve para medir fornecedor; isto serve para o operador ler na
+          // tela por que ESTA empresa ficou sem decisor, sem precisar
+          // interpretar a lista de fontes.
+          motivo: resultado.achou ? null : resultado.motivo,
           tentativas: resultado.tentativas,
         },
       });

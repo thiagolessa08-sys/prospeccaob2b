@@ -172,3 +172,52 @@ export async function contarEmpresasPorStatus(
   }
   return contagem;
 }
+
+export interface EmpresaDoPainel extends Company {
+  /**
+   * O payload da última tentativa de enriquecimento desta empresa, ou `null`
+   * se ela nunca foi tentada. É de onde a tela tira o motivo de uma empresa
+   * ter ficado `failed`.
+   */
+  ultima_tentativa: unknown | null;
+}
+
+/**
+ * Lista as empresas da campanha com o resultado da última tentativa.
+ *
+ * O join lateral existe porque a alternativa é a tela buscar os eventos de
+ * cada empresa numa chamada separada — cem empresas, cem consultas. Aqui o
+ * banco resolve de uma vez.
+ *
+ * `payload->>'companyId'` compara texto com texto: `companies.id` é `uuid` e
+ * o valor dentro do `jsonb` é string, e o Postgres recusa comparar os dois
+ * sem o cast explícito.
+ */
+export async function listarEmpresasDaCampanha(
+  db: Db,
+  tenantId: string,
+  campaignId: string,
+  limite: number,
+): Promise<EmpresaDoPainel[]> {
+  const { rows } = await db.query<EmpresaDoPainel>(
+    `select c.id, c.tenant_id, c.campaign_id, c.cnpj, c.legal_name,
+            c.trade_name, c.website, c.city, c.uf, c.employee_count,
+            c.summary, c.source, c.enrichment_status, c.created_at,
+            e.payload as ultima_tentativa
+       from companies c
+       left join lateral (
+         select payload
+           from events
+          where tenant_id = c.tenant_id
+            and kind = 'tentativa_de_enriquecimento'
+            and payload->>'companyId' = c.id::text
+          order by created_at desc
+          limit 1
+       ) e on true
+      where c.tenant_id = $1 and c.campaign_id = $2
+      order by c.created_at desc
+      limit $3`,
+    [tenantId, campaignId, limite],
+  );
+  return rows;
+}

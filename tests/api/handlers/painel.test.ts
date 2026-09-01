@@ -13,6 +13,7 @@ import {
   tratarResumoDoPainel,
   tratarLeadsDaCampanha,
   tratarDetalheDoLead,
+  tratarEmpresasDaCampanha,
 } from "../../../src/api/handlers/painel.js";
 import { HEADER_SEGREDO_N8N } from "../../../src/api/handlers/processar-resposta.js";
 
@@ -279,5 +280,89 @@ describe("tratarDetalheDoLead", () => {
       deps(),
     );
     expect(res.status).toBe(404);
+  });
+});
+
+describe("tratarEmpresasDaCampanha", () => {
+  it("recusa sem o segredo certo", async () => {
+    const res = await tratarEmpresasDaCampanha(
+      requisicao("/painel/campanhas/x/empresas"),
+      banco.campaignId,
+      deps(),
+    );
+    expect(res.status).toBe(401);
+  });
+
+  it("lista as empresas descobertas da campanha", async () => {
+    const { campanha } = await cenario(
+      "Empresas",
+      "25000000000101",
+      "empresas@alfa.com.br",
+    );
+
+    const res = await tratarEmpresasDaCampanha(
+      comSegredo("/painel/campanhas/" + campanha.id + "/empresas"),
+      campanha.id,
+      deps(),
+    );
+    expect(res.status).toBe(200);
+
+    const corpo = (await res.json()) as Array<{
+      cnpj: string;
+      enrichment_status: string;
+      ultima_tentativa: unknown;
+    }>;
+    expect(corpo).toHaveLength(1);
+    expect(corpo[0]?.cnpj).toBe("25000000000101");
+    expect(corpo[0]?.enrichment_status).toBe("pending");
+    // Nunca tentada ainda: a tela mostra "ainda não tentada" a partir disto.
+    expect(corpo[0]?.ultima_tentativa).toBeNull();
+  });
+
+  it("traz o motivo da última tentativa junto da empresa", async () => {
+    // É a resposta para "por que esta empresa ficou sem decisor?". Sem o join
+    // lateral, o motivo existe em `events` e não aparece em tela nenhuma:
+    // `Ver leads` só mostra quem virou lead, ou seja, quem deu certo.
+    const { campanha, companyId } = await cenario(
+      "Com motivo",
+      "26000000000101",
+      "commotivo@alfa.com.br",
+    );
+
+    await registrarEvento(banco.db, {
+      tenantId: banco.tenantId,
+      leadId: null,
+      kind: "tentativa_de_enriquecimento",
+      payload: {
+        companyId,
+        achou: false,
+        provedor: "hunter",
+        motivo: "Sem domínio para procurar o e-mail do decisor.",
+      },
+    });
+
+    const res = await tratarEmpresasDaCampanha(
+      comSegredo("/painel/campanhas/" + campanha.id + "/empresas"),
+      campanha.id,
+      deps(),
+    );
+    const corpo = (await res.json()) as Array<{
+      ultima_tentativa: { motivo: string; provedor: string } | null;
+    }>;
+
+    expect(corpo[0]?.ultima_tentativa?.motivo).toContain("Sem domínio");
+    expect(corpo[0]?.ultima_tentativa?.provedor).toBe("hunter");
+  });
+
+  it("não devolve empresa de outro tenant", async () => {
+    const vizinho = await criarTenantVizinho(banco.db, "0b03");
+
+    const res = await tratarEmpresasDaCampanha(
+      comSegredo("/painel/campanhas/" + vizinho.campaignId + "/empresas"),
+      vizinho.campaignId,
+      deps(),
+    );
+    // A campanha existe, mas é de outro dono: a consulta filtra por tenant.
+    expect(await res.json()).toEqual([]);
   });
 });

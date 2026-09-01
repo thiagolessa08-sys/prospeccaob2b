@@ -2,7 +2,10 @@ import { segredoConfere } from "../assinatura.js";
 import type { Db } from "../../db/port.js";
 import { UUID_DO_POSTGRES } from "../../config/env.js";
 import { listarCampanhas } from "../../db/repositories/campaigns.js";
-import { contarEmpresasPorStatus } from "../../db/repositories/companies.js";
+import {
+  contarEmpresasPorStatus,
+  listarEmpresasDaCampanha,
+} from "../../db/repositories/companies.js";
 import {
   buscarLead,
   contarLeadsPorEstagio,
@@ -79,8 +82,15 @@ export async function tratarResumoDoPainel(
         send_mode: campanha.send_mode,
         niche_description: campanha.niche_description,
         daily_send_limit: campanha.daily_send_limit,
-        // Booleano, não o objeto: os filtros podem conter o nicho inteiro e a
-        // tela só precisa saber se `gerar-filtros` já rodou.
+        /**
+         * Os filtros inteiros, e não mais só "tem ou não tem".
+         *
+         * A tela precisa mostrar QUAIS filtros foram gerados: um botão que
+         * responde "pronto" sem dizer o que fez obriga a abrir o banco para
+         * conferir. São poucos campos — CNAEs, UFs, cidades, porte, cargos e
+         * palavras-chave.
+         */
+        filtros: campanha.filters,
         tem_filtros: campanha.filters !== null,
         tem_proposta: campanha.proposal !== null,
         proposta_aprovada_em: campanha.proposal_approved_at,
@@ -155,4 +165,33 @@ export async function tratarDetalheDoLead(
   ]);
 
   return json({ lead, conversa, eventos });
+}
+
+/**
+ * Empresas descobertas, com o motivo de cada uma que ficou sem decisor.
+ *
+ * Faltava a metade do meio do funil. Depois de `descobrir-empresas` havia um
+ * número e nada mais: nenhuma forma de ver quais empresas entraram, nem por
+ * que o enriquecimento desistiu de algumas. `Ver leads` só mostra quem já
+ * virou lead — ou seja, exatamente as que deram certo.
+ */
+export async function tratarEmpresasDaCampanha(
+  req: Request,
+  campaignId: string,
+  deps: DepsPainelHttp,
+): Promise<Response> {
+  if (!segredoConfere(req.headers.get(HEADER_SEGREDO_N8N), deps.segredo)) {
+    return new Response("segredo inválido", { status: 401 });
+  }
+
+  const recusa = idInvalido(campaignId);
+  if (recusa) return recusa;
+
+  const empresas = await listarEmpresasDaCampanha(
+    deps.db,
+    deps.tenantId,
+    campaignId,
+    limiteDaQuery(req),
+  );
+  return json(empresas);
 }
