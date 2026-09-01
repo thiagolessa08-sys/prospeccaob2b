@@ -41,6 +41,17 @@ const BASE = "https://api.lusha.com/v3";
 const POR_EMPRESA = 1;
 
 /**
+ * O mínimo que a API aceita em `pagination.size`.
+ *
+ * Ela recusa menos que isso com "pagination.size must not be less than 10".
+ * Então pedir "só um contato" não se faz encolhendo a página: pede-se a
+ * página mínima e limita-se o resto — `maxContactsPerCompany` na busca, e um
+ * corte na lista de ids antes do enriquecimento, que é a etapa que cobra por
+ * e-mail revelado.
+ */
+const PAGINA_MINIMA = 10;
+
+/**
  * Só o e-mail é revelado. Telefone é outro crédito por contato, e o funil
  * inteiro é de e-mail — não há para onde discar.
  */
@@ -355,7 +366,9 @@ export async function buscarNoDominio(
     busca = await postar<unknown>(
       "/contacts/prospecting",
       {
-        pagination: { page: 0, size: POR_EMPRESA },
+        // A página vai no mínimo aceito; quem limita o resultado é o
+        // `maxContactsPerCompany` abaixo.
+        pagination: { page: 0, size: PAGINA_MINIMA },
         filters: {
           companies: { include: empresas },
           ...(Object.keys(contatos).length ? { contacts: { include: contatos } } : {}),
@@ -371,9 +384,17 @@ export async function buscarNoDominio(
   const encontrados = listaDeResultados(busca);
   if (encontrados.length === 0) return [];
 
+  /**
+   * Corta em `POR_EMPRESA` antes de enriquecer.
+   *
+   * A busca precisa pedir a página mínima de 10, mas o enriquecimento é a
+   * etapa que COBRA — por e-mail revelado. Mandar os dez ids que a página
+   * trouxe pagaria dez revelações para usar uma.
+   */
   const ids = encontrados
     .map((c) => texto(c, "id", "contactId"))
-    .filter((id): id is string => id !== null);
+    .filter((id): id is string => id !== null)
+    .slice(0, POR_EMPRESA);
 
   if (ids.length === 0) {
     throw new Error(

@@ -258,3 +258,36 @@ describe("leitura da lista de filtros", () => {
     ).rejects.toThrow(/formato inesperado.*algoInesperado/s);
   });
 });
+
+describe("página mínima da API", () => {
+  it("nunca pede size menor que 10, mesmo pedindo 1 empresa", async () => {
+    // A Lusha recusa com "pagination.size must not be less than 10". Pedir uma
+    // empresa não pode virar `size: 1`.
+    const { fetchFalso, chamadas } = servidor({ data: [] });
+
+    await pesquisarEmpresasNaLusha(
+      filtros({ tecnologias: ["SAP"] }),
+      { apiKey: "k", limite: 1 },
+      { fetch: fetchFalso },
+    );
+
+    expect(chamadas[0]?.corpo.pagination.size).toBe(10);
+  });
+
+  it("corta o resultado no teto pedido", async () => {
+    const dez = Array.from({ length: 10 }, (_, i) => ({
+      id: "v1.c" + i,
+      name: "Empresa " + i,
+      domain: "e" + i + ".com.br",
+    }));
+    const { fetchFalso } = servidor({ data: dez });
+
+    const r = await pesquisarEmpresasNaLusha(
+      filtros({ tecnologias: ["SAP"] }),
+      { apiKey: "k", limite: 1 },
+      { fetch: fetchFalso },
+    );
+
+    expect(r.empresas).toHaveLength(1);
+  });
+});

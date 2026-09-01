@@ -27,6 +27,16 @@ const BASE = "https://api.lusha.com/v3";
 /** Cota diária baixa (100 no plano base): páginas grandes gastam menos. */
 const POR_PAGINA = 50;
 
+/**
+ * O mínimo que a API aceita em `pagination.size`.
+ *
+ * Ela recusa menos que isso com "pagination.size must not be less than 10".
+ * Pedir 1 empresa não pode virar `size: 1` — pede-se a página mínima e
+ * corta-se o resultado, que aqui não custa nada: a busca cobra por chamada
+ * paginada, não por empresa devolvida.
+ */
+const PAGINA_MINIMA = 10;
+
 const COTA_ESTOURADA = 429;
 const SEM_CREDITO = 402;
 /** Filtro montado errado. A Lusha diz qual campo, mas um por vez. */
@@ -278,6 +288,9 @@ export async function pesquisarEmpresasNaLusha(
   deps: { fetch?: FetchLike } = {},
 ): Promise<ResultadoDaBuscaDeEmpresas> {
   const { apiKey, pagina = 0, limite = POR_PAGINA } = opts;
+  // A página vai no mínimo aceito pela API; o corte para o teto pedido
+  // acontece depois, sobre o que voltou.
+  const tamanhoDaPagina = Math.max(PAGINA_MINIMA, limite);
 
   let resposta: unknown;
   try {
@@ -286,7 +299,7 @@ export async function pesquisarEmpresasNaLusha(
       metodo: "POST",
       headers: { api_key: apiKey, "content-type": "application/json" },
       corpo: JSON.stringify({
-        pagination: { page: pagina, size: limite },
+        pagination: { page: pagina, size: tamanhoDaPagina },
         filters: paraFiltros(filtros),
       }),
       timeoutMs: 30_000,
@@ -326,7 +339,11 @@ export async function pesquisarEmpresasNaLusha(
   const brutas = listaDeResultados(resposta);
   const empresas = brutas
     .map(paraEmpresa)
-    .filter((e): e is EmpresaDaLusha => e !== null);
+    .filter((e): e is EmpresaDaLusha => e !== null)
+    // Corta no teto pedido: a página teve de ser 10 no mínimo, mas quem pediu
+    // uma empresa não pode receber dez. Cortar aqui não custa nada — a busca
+    // cobra por chamada paginada, não por empresa devolvida.
+    .slice(0, limite);
 
   /**
    * Achou linhas mas nenhuma legível: é campo renomeado, não busca vazia.
