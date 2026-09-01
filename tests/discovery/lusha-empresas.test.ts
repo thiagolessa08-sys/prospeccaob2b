@@ -89,7 +89,10 @@ describe("pesquisarEmpresasNaLusha", () => {
       { country: "Brazil", state: "Sao Paulo" },
       { country: "Brazil", state: "Santa Catarina" },
     ]);
-    expect(incluir.industriesLabels).toEqual(["Food & Beverage"]);
+    // O setor saiu do payload: a Lusha recusou `industries` e
+    // `industriesLabels`, e continuar chutando custa um deploy por palpite.
+    expect(incluir.industriesLabels).toBeUndefined();
+    expect(incluir.industries).toBeUndefined();
     expect(incluir.technologies).toEqual(["SAP"]);
     // `sizes` fora do payload por enquanto: é lista fechada na Lusha e o
     // formato não foi confirmado. Mandar errado custaria um ciclo de deploy.
@@ -210,5 +213,48 @@ describe("filtro recusado", () => {
         { fetch: fetchFalso as unknown as typeof fetch },
       ),
     ).rejects.toThrow(/campo x invalido/);
+  });
+});
+
+describe("leitura da lista de filtros", () => {
+  it("aceita array no topo, sem envelope", async () => {
+    // Foi o formato que a primeira versão não previu: ela só olhava dentro de
+    // `data`/`results`, a resposta veio como array puro, e o ciclo de deploy
+    // inteiro terminou sem ensinar nada.
+    let chamada = 0;
+    const fetchFalso = vi.fn(async () => {
+      chamada += 1;
+      if (chamada === 1) return new Response("{}", { status: 400 });
+      return new Response(JSON.stringify(["sizes", "revenues", "technologies"]), {
+        status: 200,
+      });
+    });
+
+    await expect(
+      pesquisarEmpresasNaLusha(
+        filtros({ tecnologias: ["SAP"] }),
+        { apiKey: "k" },
+        { fetch: fetchFalso as unknown as typeof fetch },
+      ),
+    ).rejects.toThrow(/sizes, revenues, technologies/);
+  });
+
+  it("quando não sabe ler, devolve a resposta crua", async () => {
+    // Uma resposta que não encaixa no formato esperado é informação: é ela
+    // que revela o formato real. Devolver vazio joga isso fora.
+    let chamada = 0;
+    const fetchFalso = vi.fn(async () => {
+      chamada += 1;
+      if (chamada === 1) return new Response("{}", { status: 400 });
+      return new Response(JSON.stringify({ algoInesperado: { a: 1 } }), { status: 200 });
+    });
+
+    await expect(
+      pesquisarEmpresasNaLusha(
+        filtros({ tecnologias: ["SAP"] }),
+        { apiKey: "k" },
+        { fetch: fetchFalso as unknown as typeof fetch },
+      ),
+    ).rejects.toThrow(/formato inesperado.*algoInesperado/s);
   });
 });

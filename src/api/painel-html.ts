@@ -382,6 +382,13 @@ function desenharFiltros(f) {
   if (porte.length) partes += chips("Funcion&aacute;rios", porte);
 
   partes += chips("Cargos-alvo", f.target_roles);
+
+  // O vocabulário da Lusha. Estava sendo gerado e gravado sem aparecer na
+  // tela — e é justamente o que decide se a descoberta consegue rodar.
+  partes += chips("Setores (Lusha)", f.setores);
+  partes += chips("Tecnologias (Lusha)", f.tecnologias);
+  partes += chips("Pa&iacute;ses (Lusha)", f.paises);
+
   partes += chips("Palavras-chave (n&atilde;o filtram a busca)", f.keywords);
 
   if (!partes) return "";

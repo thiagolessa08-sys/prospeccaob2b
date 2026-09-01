@@ -47,8 +47,9 @@ async function tiposDeFiltroAceitos(
   apiKey: string,
   fetchLike?: FetchLike,
 ): Promise<string> {
+  let resposta: unknown;
   try {
-    const resposta = await fetchJson<unknown>(
+    resposta = await fetchJson<unknown>(
       `${BASE}/companies/prospecting/filters`,
       {
         fetch: fetchLike,
@@ -57,14 +58,49 @@ async function tiposDeFiltroAceitos(
         timeoutMs: 15_000,
       },
     );
-    const lista = listaDeResultados(resposta);
-    const nomes = lista
-      .map((f) => texto(f, "name", "type", "filterType"))
-      .filter((n): n is string => n !== null);
-    return nomes.join(", ");
-  } catch {
-    return "";
+  } catch (erro) {
+    return `(não consegui listar os filtros: ${
+      erro instanceof Error ? erro.message.slice(0, 150) : String(erro)
+    })`;
   }
+
+  const nomes = nomesDeFiltro(resposta);
+  if (nomes.length > 0) return nomes.join(", ");
+
+  /**
+   * Não soube ler — devolve a resposta CRUA, truncada.
+   *
+   * A primeira versão devolvia string vazia aqui, e o resultado foi um ciclo
+   * de deploy inteiro que não ensinou nada: a mensagem de erro chegou sem a
+   * lista e sem dizer por quê. Uma resposta que não encaixa no formato
+   * esperado é informação — é ela que revela o formato real.
+   */
+  return `(formato inesperado) ${JSON.stringify(resposta).slice(0, 400)}`;
+}
+
+/**
+ * Os nomes dos filtros, aceitando os formatos plausíveis de lista.
+ *
+ * Cobre array no topo, envelope (`data`/`filters`/`results`/`filterTypes`), e
+ * itens que são string simples em vez de objeto. Foi justamente o array no
+ * topo que a primeira versão não previu — ela só olhava dentro de envelope.
+ */
+function nomesDeFiltro(resposta: unknown): string[] {
+  const bruta: unknown[] = Array.isArray(resposta)
+    ? resposta
+    : typeof resposta === "object" && resposta !== null
+      ? (["data", "filters", "results", "filterTypes"]
+          .map((chave) => (resposta as Record<string, unknown>)[chave])
+          .find((v) => Array.isArray(v)) as unknown[] | undefined) ?? []
+      : [];
+
+  return bruta
+    .map((item) => {
+      if (typeof item === "string") return item;
+      if (typeof item !== "object" || item === null) return null;
+      return texto(item as Record<string, unknown>, "name", "type", "filterType", "id");
+    })
+    .filter((n): n is string => n !== null && n.length > 0);
 }
 
 export interface EmpresaDaLusha {
@@ -131,14 +167,18 @@ function paraFiltros(filtros: NicheFilters): Record<string, unknown> {
     : paises.map((pais) => ({ country: pais }));
 
   /**
-   * `industriesLabels`, e não `industries`.
+   * O setor fica de fora até a Lusha dizer o nome do campo.
    *
-   * A API recusou `industries` com "property industries should not exist" —
-   * o nome está na lista de tipos de filtro da documentação e eu usei o
-   * errado. Vale a pena o comentário porque os dois nomes são plausíveis e o
-   * erro só aparece em tempo de execução.
+   * Ela recusou `industries` e depois `industriesLabels`, os dois nomes que a
+   * documentação torna plausíveis — `industriesLabels` é o tipo de filtro no
+   * endpoint de descoberta, mas não é a propriedade do corpo. Continuar
+   * chutando custa um deploy por palpite.
+   *
+   * Sem ele a busca perde precisão, mas RODA — `locations` e `technologies`
+   * foram aceitos. E rodar é o que faz o resto do caminho (paginação, leitura
+   * da resposta, gravação com domínio) ser exercitado de uma vez, em vez de
+   * um erro por ciclo. O nome certo vem da lista que o 400 agora anexa.
    */
-  if (filtros.setores.length > 0) incluir.industriesLabels = filtros.setores;
   if (filtros.tecnologias.length > 0) incluir.technologies = filtros.tecnologias;
 
   /**
