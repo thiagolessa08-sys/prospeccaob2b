@@ -29,6 +29,43 @@ const POR_PAGINA = 50;
 
 const COTA_ESTOURADA = 429;
 const SEM_CREDITO = 402;
+/** Filtro montado errado. A Lusha diz qual campo, mas um por vez. */
+const FILTRO_RECUSADO = 400;
+
+/**
+ * Pergunta à Lusha quais filtros de empresa ela aceita.
+ *
+ * Endpoint de descoberta, sem cobrança de crédito. Só é chamado depois de um
+ * 400 — não vale gastar uma ida ao servidor em toda busca para uma informação
+ * que só interessa quando algo deu errado.
+ *
+ * Devolve string vazia se a própria consulta falhar: o erro que interessa é o
+ * 400 original, e trocá-lo por "falhou ao listar filtros" só afastaria o
+ * diagnóstico da causa.
+ */
+async function tiposDeFiltroAceitos(
+  apiKey: string,
+  fetchLike?: FetchLike,
+): Promise<string> {
+  try {
+    const resposta = await fetchJson<unknown>(
+      `${BASE}/companies/prospecting/filters`,
+      {
+        fetch: fetchLike,
+        headers: { api_key: apiKey },
+        tentativas: 1,
+        timeoutMs: 15_000,
+      },
+    );
+    const lista = listaDeResultados(resposta);
+    const nomes = lista
+      .map((f) => texto(f, "name", "type", "filterType"))
+      .filter((n): n is string => n !== null);
+    return nomes.join(", ");
+  } catch {
+    return "";
+  }
+}
 
 export interface EmpresaDaLusha {
   /** O id no grafo da Lusha. Vai para `companies.external_id`. */
@@ -50,17 +87,13 @@ export interface ResultadoDaBuscaDeEmpresas {
 /**
  * Há filtro suficiente para não pedir "o mundo inteiro"?
  *
- * Mesma guarda da Casa dos Dados, e pelo mesmo motivo: uma busca sem
- * critério devolveria qualquer empresa e consumiria a cota do dia para trazer
- * lixo. País sozinho não conta — "Brazil" é o padrão e não restringe nada.
+ * Só setor e tecnologia contam. País e estado não restringem o bastante — o
+ * Brasil inteiro ainda é o Brasil inteiro —, e o porte deixou de contar
+ * quando `sizes` saiu do payload: aceitá-lo aqui deixaria passar uma busca
+ * que, na prática, não filtra nada e consome a cota do dia para trazer lixo.
  */
 export function temFiltroDeEmpresaUtil(filtros: NicheFilters): boolean {
-  return (
-    filtros.setores.length > 0 ||
-    filtros.tecnologias.length > 0 ||
-    filtros.min_employees !== null ||
-    filtros.max_employees !== null
-  );
+  return filtros.setores.length > 0 || filtros.tecnologias.length > 0;
 }
 
 /**
@@ -97,14 +130,27 @@ function paraFiltros(filtros: NicheFilters): Record<string, unknown> {
     ? estados.map((estado) => ({ country: paises[0], state: estado }))
     : paises.map((pais) => ({ country: pais }));
 
-  if (filtros.setores.length > 0) incluir.industries = filtros.setores;
+  /**
+   * `industriesLabels`, e não `industries`.
+   *
+   * A API recusou `industries` com "property industries should not exist" —
+   * o nome está na lista de tipos de filtro da documentação e eu usei o
+   * errado. Vale a pena o comentário porque os dois nomes são plausíveis e o
+   * erro só aparece em tempo de execução.
+   */
+  if (filtros.setores.length > 0) incluir.industriesLabels = filtros.setores;
   if (filtros.tecnologias.length > 0) incluir.technologies = filtros.tecnologias;
 
-  if (filtros.min_employees !== null || filtros.max_employees !== null) {
-    incluir.sizes = [
-      { min: filtros.min_employees ?? undefined, max: filtros.max_employees ?? undefined },
-    ];
-  }
+  /**
+   * Porte fica de fora por enquanto, de propósito.
+   *
+   * `sizes` é lista fechada na Lusha, alimentada por
+   * `/v3/companies/prospecting/filters/sizes` — provavelmente faixas prontas
+   * ("201-500"), não `{min, max}`. Mandar o formato errado custaria mais um
+   * ciclo de deploy para descobrir, e o porte é o critério menos decisivo do
+   * ICP: setor e tecnologia já restringem muito mais. Entra quando der para
+   * ler os valores aceitos.
+   */
 
   return { companies: { include: incluir } };
 }
@@ -216,6 +262,22 @@ export async function pesquisarEmpresasNaLusha(
     if (erro instanceof HttpError && erro.status === SEM_CREDITO) {
       throw new Error(
         "Lusha recusou por falta de crédito (HTTP 402) na busca de empresas.",
+      );
+    }
+    if (erro instanceof HttpError && erro.status === FILTRO_RECUSADO) {
+      /**
+       * 400 é sempre filtro montado errado, e a Lusha diz qual — mas só um
+       * por vez. Descobrir os nomes válidos custaria um ciclo de deploy por
+       * campo errado, então perguntamos a ela na hora.
+       *
+       * `/prospecting/filters` é endpoint de descoberta: lista os tipos de
+       * filtro aceitos e não cobra crédito. Uma chamada aqui transforma
+       * "errei um nome" em "aqui está a lista inteira dos certos".
+       */
+      const validos = await tiposDeFiltroAceitos(apiKey, deps.fetch);
+      throw new Error(
+        `Lusha recusou o filtro (HTTP 400): ${erro.corpo.slice(0, 300)}` +
+          (validos ? ` — filtros aceitos por ela: ${validos}` : ""),
       );
     }
     throw erro;

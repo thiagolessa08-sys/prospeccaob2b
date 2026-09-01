@@ -42,10 +42,13 @@ describe("temFiltroDeEmpresaUtil", () => {
     expect(temFiltroDeEmpresaUtil(filtros({ ufs: ["SP"] }))).toBe(false);
   });
 
-  it("aceita setor, tecnologia ou porte", () => {
+  it("aceita setor ou tecnologia, e só", () => {
     expect(temFiltroDeEmpresaUtil(filtros({ setores: ["Food & Beverage"] }))).toBe(true);
     expect(temFiltroDeEmpresaUtil(filtros({ tecnologias: ["SAP"] }))).toBe(true);
-    expect(temFiltroDeEmpresaUtil(filtros({ min_employees: 300 }))).toBe(true);
+    // Porte NÃO conta: `sizes` saiu do payload até dar para ler os valores
+    // que a Lusha aceita, então aceitá-lo aqui deixaria passar uma busca que
+    // na prática não filtra nada.
+    expect(temFiltroDeEmpresaUtil(filtros({ min_employees: 300 }))).toBe(false);
   });
 
   it("recusa os filtros da Receita, que a Lusha não entende", () => {
@@ -86,9 +89,11 @@ describe("pesquisarEmpresasNaLusha", () => {
       { country: "Brazil", state: "Sao Paulo" },
       { country: "Brazil", state: "Santa Catarina" },
     ]);
-    expect(incluir.industries).toEqual(["Food & Beverage"]);
+    expect(incluir.industriesLabels).toEqual(["Food & Beverage"]);
     expect(incluir.technologies).toEqual(["SAP"]);
-    expect(incluir.sizes).toEqual([{ min: 300 }]);
+    // `sizes` fora do payload por enquanto: é lista fechada na Lusha e o
+    // formato não foi confirmado. Mandar errado custaria um ciclo de deploy.
+    expect(incluir.sizes).toBeUndefined();
     // Nada de CNAE: a Lusha não sabe o que é isso.
     expect(JSON.stringify(incluir)).not.toContain("cnae");
   });
@@ -158,5 +163,52 @@ describe("pesquisarEmpresasNaLusha", () => {
       { fetch: fetchFalso },
     ).catch(() => {});
     expect(fetchFalso).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("filtro recusado", () => {
+  it("no 400, pergunta à Lusha quais filtros ela aceita", async () => {
+    // A Lusha aponta um campo errado por vez ("property industries should not
+    // exist"). Sem isto, cada nome errado custaria um ciclo de deploy para
+    // descobrir o seguinte. `/prospecting/filters` é endpoint de descoberta e
+    // devolve a lista inteira de uma vez.
+    let chamada = 0;
+    const fetchFalso = vi.fn(async () => {
+      chamada += 1;
+      if (chamada === 1) {
+        return new Response(
+          JSON.stringify({ message: "property industries should not exist" }),
+          { status: 400 },
+        );
+      }
+      return new Response(
+        JSON.stringify({ data: [{ name: "industriesLabels" }, { name: "sizes" }] }),
+        { status: 200 },
+      );
+    });
+
+    await expect(
+      pesquisarEmpresasNaLusha(
+        filtros({ setores: ["X"] }),
+        { apiKey: "k" },
+        { fetch: fetchFalso as unknown as typeof fetch },
+      ),
+    ).rejects.toThrow(/industriesLabels, sizes/);
+  });
+
+  it("se a própria consulta de filtros falhar, o 400 original prevalece", async () => {
+    // Trocar o erro que interessa por "falhou ao listar filtros" afastaria o
+    // diagnóstico da causa.
+    const fetchFalso = vi.fn(async () =>
+      new Response(JSON.stringify({ message: "campo x invalido" }), { status: 400 }),
+    );
+
+    await expect(
+      pesquisarEmpresasNaLusha(
+        filtros({ setores: ["X"] }),
+        { apiKey: "k" },
+        { fetch: fetchFalso as unknown as typeof fetch },
+      ),
+    ).rejects.toThrow(/campo x invalido/);
   });
 });
