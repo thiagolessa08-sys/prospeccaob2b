@@ -180,14 +180,25 @@ export interface EmpresaDoPainel extends Company {
    * ter ficado `failed`.
    */
   ultima_tentativa: unknown | null;
+  /** O decisor encontrado, quando o enriquecimento deu certo. */
+  lead_nome: string | null;
+  lead_cargo: string | null;
+  lead_email: string | null;
+  lead_verificado: boolean | null;
+  lead_estagio: string | null;
 }
 
 /**
- * Lista as empresas da campanha com o resultado da última tentativa.
+ * Lista as empresas da campanha com o resultado da última tentativa e, quando
+ * houve, o decisor que nasceu dela.
  *
- * O join lateral existe porque a alternativa é a tela buscar os eventos de
- * cada empresa numa chamada separada — cem empresas, cem consultas. Aqui o
+ * Os dois joins laterais existem porque a alternativa é a tela buscar por
+ * empresa numa chamada separada — cem empresas, duzentas consultas. Aqui o
  * banco resolve de uma vez.
+ *
+ * O do lead é o que responde "o que exatamente foi enriquecido": sem ele a
+ * tabela mostra `enriched` e o operador tem de abrir Ver leads e casar as
+ * duas listas de cabeça.
  *
  * `payload->>'companyId'` compara texto com texto: `companies.id` é `uuid` e
  * o valor dentro do `jsonb` é string, e o Postgres recusa comparar os dois
@@ -203,7 +214,12 @@ export async function listarEmpresasDaCampanha(
     `select c.id, c.tenant_id, c.campaign_id, c.cnpj, c.legal_name,
             c.trade_name, c.website, c.city, c.uf, c.employee_count,
             c.summary, c.source, c.enrichment_status, c.created_at,
-            e.payload as ultima_tentativa
+            e.payload as ultima_tentativa,
+            l.full_name  as lead_nome,
+            l.role_title as lead_cargo,
+            l.email      as lead_email,
+            l.email_verified as lead_verificado,
+            l.stage      as lead_estagio
        from companies c
        left join lateral (
          select payload
@@ -214,6 +230,13 @@ export async function listarEmpresasDaCampanha(
           order by created_at desc
           limit 1
        ) e on true
+       left join lateral (
+         select full_name, role_title, email, email_verified, stage
+           from leads
+          where tenant_id = c.tenant_id and company_id = c.id
+          order by created_at desc
+          limit 1
+       ) l on true
       where c.tenant_id = $1 and c.campaign_id = $2
       order by c.created_at desc
       limit $3`,

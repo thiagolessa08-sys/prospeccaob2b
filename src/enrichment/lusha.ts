@@ -4,9 +4,9 @@ import type { CandidatoDecisor, StatusVerificacao } from "./types.js";
 /**
  * Adaptador da Lusha (API V3), no lugar da Hunter para achar o decisor.
  *
- * A Casa dos Dados continua descobrindo as empresas: ela vem da Receita e
- * traz CNPJ, CNAE e situação cadastral, que a Lusha não tem e que o funil usa
- * para recusar empresa inativa antes de gastar crédito.
+ * Com `LUSHA_API_KEY` preenchida, a descoberta de empresas também é dela
+ * (`discovery/lusha-empresas.ts`) — e é o que faz esta busca de contato
+ * funcionar, porque a empresa passa a vir do grafo dela, com domínio.
  *
  * Dois caminhos, espelhando o que a cadeia já pedia da Hunter:
  *
@@ -29,8 +29,16 @@ import type { CandidatoDecisor, StatusVerificacao } from "./types.js";
  */
 const BASE = "https://api.lusha.com/v3";
 
-/** Quantos contatos pedir por empresa. Além disso é ruído para revisar. */
-const POR_EMPRESA = 10;
+/**
+ * Quantos contatos pedir por empresa.
+ *
+ * UM, na fase de teste. A cota da Lusha é diária e baixa (100 no plano
+ * base), e cada contato revelado é uma cobrança. Pedir dez para escolher um
+ * gasta dez vezes mais para o mesmo lead — faz sentido quando se está
+ * calibrando qualidade, não quando se está calibrando se a integração
+ * funciona.
+ */
+const POR_EMPRESA = 1;
 
 /**
  * Só o e-mail é revelado. Telefone é outro crédito por contato, e o funil

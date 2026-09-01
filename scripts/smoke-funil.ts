@@ -195,6 +195,7 @@ async function main() {
     senhaDoPainel: "senha-do-painel",
     apiKeyHunter: CHAVES.hunter ?? "chave-stub",
     apiKeyLusha: "",
+    loteDeEnriquecimento: 20,
     apiKeyCasaDosDados: CHAVES.casaDosDados ?? "chave-stub",
   });
 

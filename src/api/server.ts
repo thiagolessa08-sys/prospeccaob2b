@@ -44,6 +44,8 @@ export interface DepsDoApp {
   senhaDoPainel: string;
   apiKeyHunter: string;
   apiKeyLusha: string;
+  /** Quantas empresas o lote de enriquecimento processa por vez. */
+  loteDeEnriquecimento: number;
   apiKeyCasaDosDados: string;
 }
 
@@ -235,6 +237,7 @@ export function criarApp(deps: DepsDoApp): Hono {
       segredo: deps.segredoN8n,
       apiKeyHunter: deps.apiKeyHunter,
       apiKeyLusha: deps.apiKeyLusha,
+      loteDeEnriquecimento: deps.loteDeEnriquecimento,
     }),
   );
 

@@ -9,6 +9,8 @@ export interface DepsEnriquecerLoteHttp {
   segredo: string;
   apiKeyHunter: string;
   apiKeyLusha: string;
+  /** Quantas empresas o lote de enriquecimento processa por vez. */
+  loteDeEnriquecimento: number;
 }
 
 /**
@@ -31,6 +33,7 @@ export async function tratarEnriquecerLote(
     campaignId,
     apiKeyHunter: deps.apiKeyHunter,
     apiKeyLusha: deps.apiKeyLusha,
+    limite: deps.loteDeEnriquecimento,
   });
 
   return new Response(JSON.stringify(resultado), { status: 200 });

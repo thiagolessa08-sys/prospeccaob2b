@@ -14,6 +14,7 @@ const app = criarApp({
   senhaDoPainel: ambiente.PAINEL_SENHA,
   apiKeyHunter: ambiente.HUNTER_API_KEY,
   apiKeyLusha: ambiente.LUSHA_API_KEY,
+  loteDeEnriquecimento: ambiente.LOTE_DE_ENRIQUECIMENTO,
   apiKeyCasaDosDados: ambiente.CASA_DOS_DADOS_API_KEY,
 });
 

@@ -594,8 +594,13 @@ async function verEmpresas(id) {
   }
 
   var html = resumoDasEmpresas(empresas);
-  html += '<div class="rolagem"><table><thead><tr><th>Empresa</th><th>CNPJ</th>';
-  html += "<th>Cidade/UF</th><th>Func.</th><th>Status</th><th>Por qu&ecirc;</th>";
+  html += '<div class="rolagem"><table><thead><tr>';
+  // O que a descoberta trouxe...
+  html += "<th>Empresa</th><th>Dom&iacute;nio</th><th>Cidade/UF</th><th>Func.</th>";
+  // ...e o que o enriquecimento acrescentou. A separação importa: uma coluna
+  // vazia à direita é etapa que não rodou, não dado que faltou na origem.
+  html += "<th>Decisor</th><th>Cargo</th><th>E-mail</th>";
+  html += "<th>Status</th><th>Por qu&ecirc;</th>";
   html += "</tr></thead><tbody>";
 
   for (var i = 0; i < empresas.length; i++) {
@@ -607,9 +612,18 @@ async function verEmpresas(id) {
 
     html += "<tr>";
     html += "<td>" + esc(e.trade_name || e.legal_name) + "</td>";
-    html += "<td>" + esc(e.cnpj || "—") + "</td>";
+    // O domínio é o que faz a busca de contato funcionar. Vazio aqui explica
+    // sozinho por que o decisor não veio.
+    html += "<td>" + esc(e.website || "—") + "</td>";
     html += "<td>" + esc([e.city, e.uf].filter(Boolean).join("/") || "—") + "</td>";
     html += "<td>" + (e.employee_count === null ? "—" : e.employee_count) + "</td>";
+    html += "<td>" + esc(e.lead_nome || "—") + "</td>";
+    html += "<td>" + esc(e.lead_cargo || "—") + "</td>";
+    html += "<td>" + esc(e.lead_email || "—");
+    if (e.lead_email && e.lead_verificado) {
+      html += ' <span class="etiqueta" style="color:var(--ok)">verificado</span>';
+    }
+    html += "</td>";
     html += '<td style="color:' + cor + '">' + esc(e.enrichment_status) + "</td>";
     html += "<td>" + esc(t.motivo || (e.enrichment_status === "pending" ? "ainda não tentada" : "—"));
     if (t.provedor) html += ' <span class="etiqueta">' + esc(t.provedor) + "</span>";

@@ -74,6 +74,16 @@ const EnvSchema = z.object({
    * chegasse ao servidor. Vazia, nada muda — a Hunter continua sendo usada.
    */
   LUSHA_API_KEY: z.string().optional().default(""),
+  /**
+   * Quantas empresas o botão Enriquecer processa por vez.
+   *
+   * UMA por padrão, para a fase de teste: cada empresa custa até 2 chamadas
+   * da cota diária da Lusha (buscar + revelar), e um lote de 20 queimava 40
+   * de 100 antes de alguém saber se a integração funcionava. Suba quando o
+   * acerto estiver calibrado — é variável de ambiente justamente para não
+   * exigir mudança de código para isso.
+   */
+  LOTE_DE_ENRIQUECIMENTO: z.coerce.number().int().positive().optional().default(1),
 });
 
 export type Env = z.infer<typeof EnvSchema>;

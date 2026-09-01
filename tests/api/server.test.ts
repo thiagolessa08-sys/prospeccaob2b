@@ -28,6 +28,7 @@ function app() {
     senhaDoPainel: "senha-do-painel",
     apiKeyHunter: "chave-hunter",
     apiKeyLusha: "",
+    loteDeEnriquecimento: 20,
     apiKeyCasaDosDados: "chave-casa-dos-dados",
   });
 }
@@ -129,6 +130,7 @@ describe("erros não tratados", () => {
         senhaDoPainel: "senha-do-painel",
         apiKeyHunter: "chave-hunter",
         apiKeyLusha: "",
+        loteDeEnriquecimento: 20,
         apiKeyCasaDosDados: "chave-casa-dos-dados",
       });
       const res = await appQuebrado.request("/campaigns/ativas", {
