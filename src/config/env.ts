@@ -2,8 +2,7 @@ import { z } from "zod";
 
 const EnvSchema = z.object({
   ANTHROPIC_API_KEY: z.string().min(1),
-  SUPABASE_URL: z.string().url(),
-  SUPABASE_SERVICE_ROLE_KEY: z.string().min(1),
+  /** Connection string do Postgres. É por aqui que TODA a persistência passa. */
   DATABASE_URL: z.string().min(1),
   HUNTER_API_KEY: z.string().min(1),
   CASA_DOS_DADOS_API_KEY: z.string().min(1),

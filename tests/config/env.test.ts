@@ -3,8 +3,6 @@ import { loadEnv } from "../../src/config/env.js";
 
 const validSource = {
   ANTHROPIC_API_KEY: "sk-ant-teste",
-  SUPABASE_URL: "https://abc.supabase.co",
-  SUPABASE_SERVICE_ROLE_KEY: "chave-de-servico",
   DATABASE_URL: "postgresql://x",
   HUNTER_API_KEY: "chave",
   CASA_DOS_DADOS_API_KEY: "chave-casa-dos-dados",
@@ -23,14 +21,8 @@ describe("loadEnv", () => {
   });
 
   it("lança erro nomeando a variável ausente", () => {
-    const { SUPABASE_URL, ...semUrl } = validSource;
-    expect(() => loadEnv(semUrl)).toThrow(/SUPABASE_URL/);
-  });
-
-  it("lança erro quando SUPABASE_URL não é uma URL", () => {
-    expect(() =>
-      loadEnv({ ...validSource, SUPABASE_URL: "abc.supabase.co" }),
-    ).toThrow(/SUPABASE_URL/);
+    const { DATABASE_URL, ...semBanco } = validSource;
+    expect(() => loadEnv(semBanco)).toThrow(/DATABASE_URL/);
   });
 
   it("lança erro quando uma variável está vazia", () => {

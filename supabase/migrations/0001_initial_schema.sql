@@ -159,9 +159,12 @@ create index events_created_idx on events (created_at desc);
 -- lista de supressão de todos os tenants.
 --
 -- Habilitamos RLS sem criar nenhuma policy: nada é acessível pelas chaves
--- anon/authenticated. A chave service_role usada por src/db/client.ts ignora
--- RLS, então todo o backend continua funcionando sem alteração. O painel do
--- plano futuro acrescenta as policies com escopo por tenant.
+-- anon/authenticated. O backend não passa por elas — conecta direto no
+-- Postgres pela DATABASE_URL, como dono das tabelas, e dono ignora RLS
+-- enquanto não houver FORCE ROW LEVEL SECURITY. Vale igual num Postgres
+-- avulso (Railway, RDS): o RLS fica armado para o dia em que o painel web
+-- expuser as tabelas, sem atrapalhar o backend hoje. O painel do plano
+-- futuro acrescenta as policies com escopo por tenant.
 alter table tenants enable row level security;
 alter table campaigns enable row level security;
 alter table companies enable row level security;

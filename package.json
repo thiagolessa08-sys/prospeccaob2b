@@ -8,13 +8,15 @@
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
     "smoke:niche": "tsx scripts/smoke-niche.ts",
-    "start": "tsx src/api/main.ts",
-    "smoke:funil": "tsx scripts/smoke-funil.ts"
+    "start": "node dist/api/main.js",
+    "smoke:funil": "tsx scripts/smoke-funil.ts",
+    "build": "tsc -p tsconfig.build.json",
+    "dev": "tsx src/api/main.ts",
+    "db:migrate": "tsx scripts/migrar.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.122.0",
     "@hono/node-server": "^2.1.1",
-    "@supabase/supabase-js": "^2.45.0",
     "hono": "^4.13.5",
     "pg": "^8.23.0",
     "zod": "^4.0.0"
@@ -26,5 +28,8 @@
     "tsx": "^4.23.13",
     "typescript": "^5.6.0",
     "vitest": "^2.1.0"
+  },
+  "engines": {
+    "node": ">=22"
   }
 }
