@@ -433,7 +433,7 @@ async function criarCampanha() {
 }
 
 /**
- * O 401 do login e tratado aqui, e nao pelo `api`: la ele significa "sua
+ * O 401 do login e tratado aqui, e nao pela funcao api: la ele significa "sua
  * sessao acabou, entre de novo", e aqui significa "essa senha esta errada".
  * Mandar os dois pela mesma mensagem diria ao operador que a sessao expirou
  * no exato momento em que ele esta tentando criar uma.
@@ -494,7 +494,7 @@ document.addEventListener("click", function (e) {
 });
 
 // Tenta carregar de cara: se o cookie da sessão anterior ainda vale, o
-// operador entra direto. Se não, o 401 cai em `mostrarEntrada` e ele vê a
+// operador entra direto. Se não, o 401 cai em mostrarEntrada e ele vê a
 // tela de senha — sem precisar de nenhuma verificação prévia daqui.
 carregar();
 </script>
