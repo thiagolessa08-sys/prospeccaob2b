@@ -21,11 +21,9 @@
  */
 import pg from "pg";
 import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
+import { CAMINHO_DA_MIGRATION } from "./caminho-migration.js";
 
-const aqui = dirname(fileURLToPath(import.meta.url));
-const MIGRATION = join(aqui, "../supabase/migrations/0001_initial_schema.sql");
+const MIGRATION = CAMINHO_DA_MIGRATION;
 
 /**
  * Nunca deixe a connection string chegar a um log: ela carrega a senha do
@@ -83,6 +81,21 @@ if (url.lastIndexOf("postgres://") > 0 || url.lastIndexOf("postgresql://") > 0) 
   process.exit(1);
 }
 
+/**
+ * Lê o .sql ANTES de conectar.
+ *
+ * Não é detalhe de ordem: um caminho errado passa a falhar sem abrir conexão
+ * nenhuma, o que torna o erro reproduzível localmente sem banco — foi
+ * justamente o que faltou para pegar o `../` vs `../../` antes do deploy.
+ */
+let sql: string;
+try {
+  sql = readFileSync(MIGRATION, "utf8");
+} catch {
+  console.error(`Migration não encontrada em ${MIGRATION}`);
+  process.exit(1);
+}
+
 console.log(`Conectando em ${alvo.hostname}:${alvo.port || 5432}${alvo.pathname}`);
 const cliente = new pg.Client({ connectionString: url });
 
@@ -97,7 +110,7 @@ try {
     process.exit(0);
   }
 
-  await cliente.query(readFileSync(MIGRATION, "utf8"));
+  await cliente.query(sql);
   console.log("Schema aplicado.");
 
   const { rows: tabelas } = await cliente.query<{ nome: string }>(
