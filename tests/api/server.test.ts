@@ -31,6 +31,16 @@ function app() {
 }
 
 describe("rotas", () => {
+  it("responde na raiz, para a URL do serviço não parecer quebrada", async () => {
+    const res = await app().request("/");
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      servico: "prospeccao-b2b",
+      ok: true,
+      saude: "/saude",
+    });
+  });
+
   it("responde ao health check", async () => {
     const res = await app().request("/saude");
     expect(res.status).toBe(200);

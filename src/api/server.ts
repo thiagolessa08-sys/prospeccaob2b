@@ -32,6 +32,13 @@ export interface DepsDoApp {
 export function criarApp(deps: DepsDoApp): Hono {
   const app = new Hono();
 
+  // A raiz existe só para não parecer deploy quebrado: um 404 nu em `/` é
+  // indistinguível de "serviço não subiu" para quem abre a URL no navegador.
+  // Não expõe dado nenhum nem a superfície da API — para isso existe o README.
+  app.get("/", (c) =>
+    c.json({ servico: "prospeccao-b2b", ok: true, saude: "/saude" }),
+  );
+
   app.get("/saude", (c) => c.json({ ok: true }));
 
   // Rota lenta (mas barata): o n8n consulta antes das quatro rotas de lote,
