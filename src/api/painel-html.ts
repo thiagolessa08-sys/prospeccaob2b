@@ -280,8 +280,12 @@ async function carregar() {
   desenharCampanhas(campanhas);
 }
 
-// A última lista carregada. O editor de proposta lê daqui em vez de buscar de
-// novo: `carregar()` já traz a proposta inteira junto de cada campanha.
+// A ultima lista carregada. O editor de proposta le daqui em vez de buscar de
+// novo: carregar() ja traz a proposta inteira junto de cada campanha.
+//
+// Sem crase neste comentario, de proposito: ele vive DENTRO do template
+// literal de painel-html.ts, e uma crase aqui o fecha antes da hora. Ja
+// quebrou o build uma vez (commit 4485a8c) e quebrou de novo aqui.
 var campanhasEmTela = [];
 
 function desenharCampanhas(campanhas) {
