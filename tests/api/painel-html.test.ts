@@ -55,3 +55,42 @@ describe("o template da tela não pode ser fechado antes da hora", () => {
     }
   });
 });
+
+/**
+ * A guarda anterior olhava um arquivo só, e o erro seguinte aconteceu em
+ * outro: um `awk` engoliu a crase de fechamento do prompt em
+ * `ai/niche-parser.ts`, o template ficou aberto e o build morreu com
+ * "Unterminated template literal" — mensagem que aponta para o fim do
+ * arquivo, longe da causa.
+ *
+ * Contar crases por arquivo é grosseiro e é justamente por isso que serve:
+ * número ímpar significa template aberto, sempre, sem exceção. Não pega todos
+ * os casos (duas crases erradas se cancelam), mas pega este — que já custou
+ * três builds nesta base.
+ */
+describe("nenhum arquivo com template literal aberto", () => {
+  it("toda fonte em src/ tem número par de crases", async () => {
+    const { readdirSync, readFileSync, statSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const { fileURLToPath } = await import("node:url");
+
+    const raiz = join(dirname(fileURLToPath(import.meta.url)), "../../src");
+
+    const arquivos: string[] = [];
+    const varrer = (dir: string) => {
+      for (const nome of readdirSync(dir)) {
+        const caminho = join(dir, nome);
+        if (statSync(caminho).isDirectory()) varrer(caminho);
+        else if (nome.endsWith(".ts")) arquivos.push(caminho);
+      }
+    };
+    varrer(raiz);
+
+    const impares = arquivos.filter((caminho) => {
+      const crases = (readFileSync(caminho, "utf8").match(/`/g) ?? []).length;
+      return crases % 2 !== 0;
+    });
+
+    expect(impares.map((c) => c.split("\\").join("/"))).toEqual([]);
+  });
+});

@@ -44,7 +44,7 @@ Os três campos seguintes são para a Lusha, que é uma base global e não conhe
 - tecnologias: nomes de produtos que a empresa-alvo usaria, quando a descrição mencionar algum ("SAP", "TOTVS", "Oracle", "Microsoft Dynamics", "Salesforce"). Só o nome do produto, sem versão. Lista vazia quando a descrição não citar nenhuma.
 - paises: nomes de país em inglês ("Brazil"). Quase sempre apenas Brazil.
 
-Na dúvida sobre um CNAE, deixe-o de fora e coloque o termo em keywords.
+Na dúvida sobre um CNAE, deixe-o de fora e coloque o termo em keywords.`;
 
 export async function parseNiche(
   description: string,
