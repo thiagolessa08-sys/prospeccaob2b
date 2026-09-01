@@ -269,3 +269,122 @@ describe("enriquecerDecisor — recusas", () => {
     }
   });
 });
+
+/**
+ * Esta bateria cobre o buraco que derrubou o funil no smoke de ponta a ponta:
+ * a busca avançada da Casa dos Dados não devolve site nenhum, então TODA
+ * empresa descoberta chega aqui com `dominio: null`. Antes da correção a
+ * cadeia desistia na hora, e o enriquecimento tinha 100% de falha em produção
+ * — invisível nos testes, porque as fixturas traziam domínio embutido.
+ */
+describe("enriquecerDecisor — empresa sem domínio", () => {
+  const SEM_DOMINIO = { ...ENTRADA, dominio: null };
+
+  it("deriva o domínio do e-mail que a empresa declarou à Receita", async () => {
+    const d = deps({
+      buscarEmpresa: vi
+        .fn()
+        .mockResolvedValue({ ...EMPRESA, email: "contato@alfa.com.br" }),
+      acharPorNome: vi.fn().mockResolvedValue({
+        nome: "Maria Souza",
+        cargo: null,
+        email: "maria.souza@alfa.com.br",
+        confianca: 90,
+        verificacao: "valid",
+        fonte: "hunter_finder",
+      }),
+    });
+
+    const r = await enriquecerDecisor(SEM_DOMINIO, d);
+
+    expect(r.achou).toBe(true);
+    // Caixa genérica não serve como destinatário, mas o domínio dela sim.
+    expect(d.acharPorNome).toHaveBeenCalledWith(
+      expect.objectContaining({ dominio: "alfa.com.br" }),
+    );
+  });
+
+  it("cai para o nome da empresa quando não há site nem e-mail na Receita", async () => {
+    const d = deps({
+      acharPorNome: vi.fn().mockResolvedValue({
+        nome: "Maria Souza",
+        cargo: null,
+        email: "maria.souza@alfa.com.br",
+        confianca: 90,
+        verificacao: "valid",
+        fonte: "hunter_finder",
+      }),
+    });
+
+    const r = await enriquecerDecisor(SEM_DOMINIO, d);
+
+    expect(r.achou).toBe(true);
+    // A Hunter aceita `company` no lugar de `domain` — sem isso, o CNPJ
+    // descoberto seria descartado sem nenhuma tentativa.
+    expect(d.acharPorNome).toHaveBeenCalledWith(
+      expect.objectContaining({ empresa: "ALFA ALIMENTOS" }),
+    );
+    expect(d.acharPorNome).toHaveBeenCalledWith(
+      expect.not.objectContaining({ dominio: expect.anything() }),
+    );
+  });
+
+  it("usa o nome da empresa também na busca por cargo funcional", async () => {
+    const d = deps({
+      buscarDominio: vi.fn().mockResolvedValue([
+        {
+          nome: "Joao Lima",
+          cargo: "Gerente de TI",
+          email: "joao.lima@alfa.com.br",
+          confianca: 88,
+          verificacao: "valid",
+          fonte: "hunter_domain",
+        },
+      ]),
+    });
+
+    const r = await enriquecerDecisor(
+      { ...SEM_DOMINIO, alvo: { tipo: "cargo_funcional", departamento: "it" } },
+      d,
+    );
+
+    expect(r.achou).toBe(true);
+    expect(d.buscarDominio).toHaveBeenCalledWith(
+      expect.objectContaining({ empresa: "ALFA ALIMENTOS", departamento: "it" }),
+    );
+  });
+
+  it("prefere a razão social quando não há nome fantasia", async () => {
+    const d = deps({
+      buscarEmpresa: vi
+        .fn()
+        .mockResolvedValue({ ...EMPRESA, nomeFantasia: null }),
+    });
+
+    await enriquecerDecisor(SEM_DOMINIO, d);
+
+    expect(d.acharPorNome).toHaveBeenCalledWith(
+      expect.objectContaining({ empresa: "ALFA ALIMENTOS LTDA" }),
+    );
+  });
+
+  it("não deriva domínio de provedor pessoal: cai para o nome da empresa", async () => {
+    // Caixa genérica (descartada como destinatário) e ainda por cima num
+    // provedor pessoal — "gmail.com" não é o domínio da empresa, e procurar
+    // decisores nele não significaria nada.
+    const d = deps({
+      buscarEmpresa: vi
+        .fn()
+        .mockResolvedValue({ ...EMPRESA, email: "contato@gmail.com" }),
+    });
+
+    await enriquecerDecisor(SEM_DOMINIO, d);
+
+    expect(d.acharPorNome).toHaveBeenCalledWith(
+      expect.objectContaining({ empresa: "ALFA ALIMENTOS" }),
+    );
+    expect(d.acharPorNome).not.toHaveBeenCalledWith(
+      expect.objectContaining({ dominio: "gmail.com" }),
+    );
+  });
+});

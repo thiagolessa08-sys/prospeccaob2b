@@ -84,7 +84,11 @@ async function cenario(cnpjs: string[]) {
       cnpj,
       legalName: `Empresa ${contador}-${i}`,
       tradeName: null,
-      website: "https://alfa.com.br",
+      // `null` de propósito: é o que a descoberta pela Casa dos Dados grava,
+      // já que a busca avançada de lá não devolve site. Fixar um site aqui
+      // foi o que escondeu, por um commit inteiro, o fato de a cadeia
+      // desistir de toda empresa sem domínio.
+      website: null,
       city: null,
       uf: null,
       employeeCount: null,

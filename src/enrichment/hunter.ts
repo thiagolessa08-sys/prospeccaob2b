@@ -47,9 +47,35 @@ interface RespostaFinder {
   };
 }
 
+/**
+ * Como dizer à Hunter de que empresa estamos falando.
+ *
+ * Os dois endpoints usados aqui aceitam `domain` **ou** `company` (nome), e
+ * `domain` tem precedência quando os dois vêm — verificado na documentação
+ * oficial da Hunter em 2026-08-31. Aceitar o nome importa muito no Brasil: a
+ * busca avançada da Casa dos Dados não devolve site nenhum, e boa parte das
+ * empresas não declara e-mail à Receita, então sem este caminho a maioria dos
+ * CNPJs descobertos ficaria sem nenhuma forma de procurar o decisor.
+ */
+function localizarEmpresa(
+  parametros: URLSearchParams,
+  input: { dominio?: string; empresa?: string },
+): void {
+  if (input.dominio) {
+    parametros.set("domain", input.dominio);
+  } else if (input.empresa) {
+    parametros.set("company", input.empresa);
+  } else {
+    throw new Error(
+      "Informe o domínio ou o nome da empresa para consultar a Hunter.",
+    );
+  }
+}
+
 export async function acharEmailPorNome(
   input: {
-    dominio: string;
+    dominio?: string;
+    empresa?: string;
     primeiroNome: string;
     sobrenome: string;
     apiKey: string;
@@ -57,11 +83,11 @@ export async function acharEmailPorNome(
   deps: { fetch?: FetchLike } = {},
 ): Promise<CandidatoDecisor | null> {
   const parametros = new URLSearchParams({
-    domain: input.dominio,
     first_name: input.primeiroNome,
     last_name: input.sobrenome,
     api_key: input.apiKey,
   });
+  localizarEmpresa(parametros, input);
 
   const resposta = await fetchJson<RespostaFinder>(
     `${BASE}/email-finder?${parametros}`,
@@ -96,7 +122,8 @@ interface RespostaDominio {
 
 export async function buscarNoDominio(
   input: {
-    dominio: string;
+    dominio?: string;
+    empresa?: string;
     departamento?: string;
     senioridade?: string;
     apiKey: string;
@@ -104,10 +131,10 @@ export async function buscarNoDominio(
   deps: { fetch?: FetchLike } = {},
 ): Promise<CandidatoDecisor[]> {
   const parametros = new URLSearchParams({
-    domain: input.dominio,
     limit: "10",
     api_key: input.apiKey,
   });
+  localizarEmpresa(parametros, input);
   if (input.departamento) parametros.set("department", input.departamento);
   if (input.senioridade) parametros.set("seniority", input.senioridade);
 

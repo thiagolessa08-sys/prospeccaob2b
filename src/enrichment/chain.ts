@@ -1,6 +1,7 @@
 import { buscarEmpresaPorCnpj } from "./brasilapi.js";
 import { acharEmailPorNome, buscarNoDominio, verificarEmail } from "./hunter.js";
 import { ehEmailGenerico } from "./generic-emails.js";
+import { dominioDoEmail } from "./dominio.js";
 import type {
   CandidatoDecisor,
   DadosDaEmpresa,
@@ -118,12 +119,33 @@ export async function enriquecerDecisor(
     }
   }
 
-  const semDominio = !entrada.dominio;
-  if (semDominio) {
-    tentativas.push({ fonte: "hunter_finder", resultado: "vazio", detalhe: "empresa sem site conhecido" });
-    return { achou: false, motivo: "Sem domínio para procurar o e-mail do decisor.", tentativas };
+  // Como a Hunter vai saber de que empresa estamos falando. Três níveis, do
+  // mais preciso ao mais frouxo:
+  //
+  //   1. o site cadastrado, quando existe;
+  //   2. o domínio do e-mail que a empresa declarou à Receita — serve mesmo
+  //      sendo caixa genérica: `contato@empresa.com.br` não presta como
+  //      destinatário, mas revela o domínio;
+  //   3. a razão social, que a Hunter aceita no lugar do domínio.
+  //
+  // Sem o nível 3 o funil não fecharia: a busca avançada da Casa dos Dados
+  // não devolve site nenhum, e boa parte dos CNPJs não tem e-mail na Receita —
+  // então a maioria das empresas descobertas chegaria aqui sem forma alguma
+  // de procurar o decisor.
+  const dominio = entrada.dominio ?? dominioDoEmail(empresa.email);
+  const nomeDaEmpresa = empresa.nomeFantasia?.trim() || empresa.razaoSocial.trim();
+  const localizador: { dominio?: string; empresa?: string } = dominio
+    ? { dominio }
+    : { empresa: nomeDaEmpresa };
+
+  if (!dominio && !nomeDaEmpresa) {
+    tentativas.push({
+      fonte: "hunter_finder",
+      resultado: "vazio",
+      detalhe: "empresa sem site, sem e-mail na Receita e sem razão social",
+    });
+    return { achou: false, motivo: "Sem forma de localizar a empresa.", tentativas };
   }
-  const dominio = entrada.dominio!;
 
   // 2. Nome do sócio (grátis) + email-finder (pago) — acerta muito mais que a
   //    busca cega por domínio, pelo mesmo crédito.
@@ -133,7 +155,7 @@ export async function enriquecerDecisor(
       if (!nome) continue;
       try {
         const achado = await deps.acharPorNome({
-          dominio,
+          ...localizador,
           primeiroNome: nome.primeiro,
           sobrenome: nome.ultimo,
           apiKey: entrada.apiKey,
@@ -166,7 +188,7 @@ export async function enriquecerDecisor(
   //    funcional, e último recurso quando o sócio não deu em nada.
   try {
     const encontrados = await deps.buscarDominio({
-      dominio,
+      ...localizador,
       departamento:
         entrada.alvo.tipo === "cargo_funcional" ? entrada.alvo.departamento : undefined,
       senioridade:

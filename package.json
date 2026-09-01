@@ -8,7 +8,8 @@
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
     "smoke:niche": "tsx scripts/smoke-niche.ts",
-    "start": "tsx src/api/main.ts"
+    "start": "tsx src/api/main.ts",
+    "smoke:funil": "tsx scripts/smoke-funil.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.122.0",
