@@ -8,6 +8,8 @@ import { tratarEnriquecerLote } from "./handlers/enriquecer-lote.js";
 import { tratarDescobrirEmpresas } from "./handlers/descobrir-empresas.js";
 import { tratarRetomarFollowups } from "./handlers/retomar-followups.js";
 import { tratarListarCampanhasAtivas } from "./handlers/listar-campanhas-ativas.js";
+import { tratarCriarCampanha } from "./handlers/criar-campanha.js";
+import { tratarGerarFiltros } from "./handlers/gerar-filtros.js";
 
 export interface DepsDoApp {
   db: Db;
@@ -36,6 +38,27 @@ export function criarApp(deps: DepsDoApp): Hono {
   // para saber para quais campanhas disparar cada uma.
   app.get("/campaigns/ativas", (c) =>
     tratarListarCampanhasAtivas(c.req.raw, {
+      db: deps.db,
+      tenantId: deps.tenantId,
+      segredo: deps.segredoN8n,
+    }),
+  );
+
+  // O ponto de entrada do produto: cria a campanha a partir da descrição em
+  // texto livre do nicho. Rota barata — só grava a linha.
+  app.post("/campaigns", (c) =>
+    tratarCriarCampanha(c.req.raw, {
+      db: deps.db,
+      tenantId: deps.tenantId,
+      segredo: deps.segredoN8n,
+    }),
+  );
+
+  // Rota lenta: transforma o nicho em texto livre em filtros estruturados
+  // via IA. Chamada uma vez depois de criar a campanha; pode ser repetida
+  // sozinha se a IA falhar.
+  app.post("/campaigns/:id/gerar-filtros", (c) =>
+    tratarGerarFiltros(c.req.raw, c.req.param("id"), {
       db: deps.db,
       tenantId: deps.tenantId,
       segredo: deps.segredoN8n,
