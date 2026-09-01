@@ -10,6 +10,17 @@ export const NicheFiltersSchema = z.object({
   max_employees: z.number().nullable(),
   target_roles: z.array(z.string()),
   keywords: z.array(z.string()),
+  /**
+   * Os três campos abaixo são o vocabulário da Lusha, não o da Receita.
+   *
+   * Opcionais com padrão vazio de propósito: as campanhas cujos filtros foram
+   * gerados antes destes campos existirem continuam válidas, e `safeParse`
+   * segue passando nelas. Sem isso, ligar a descoberta pela Lusha faria toda
+   * campanha antiga responder "sem filtros salvos".
+   */
+  setores: z.array(z.string()).optional().default([]),
+  tecnologias: z.array(z.string()).optional().default([]),
+  paises: z.array(z.string()).optional().default([]),
 });
 
 export type NicheFilters = z.infer<typeof NicheFiltersSchema>;
@@ -28,7 +39,12 @@ Regras:
 - target_roles: cargos do decisor em português, na forma como aparecem em títulos reais (por exemplo "Gerente de TI", "Diretor de Operações").
 - keywords: termos para busca textual complementar, incluindo qualquer atividade que você não conseguiu mapear para um CNAE.
 
-Na dúvida sobre um CNAE, deixe-o de fora e coloque o termo em keywords.`;
+Os três campos seguintes são para a Lusha, que é uma base global e não conhece CNAE nem UF:
+- setores: rótulos de setor EM INGLÊS, como aparecem em bases B2B internacionais ("Food & Beverage", "Chemicals", "Metals & Mining", "Automotive", "Wholesale", "Retail"). Dois a cinco, do mais central para o mais periférico.
+- tecnologias: nomes de produtos que a empresa-alvo usaria, quando a descrição mencionar algum ("SAP", "TOTVS", "Oracle", "Microsoft Dynamics", "Salesforce"). Só o nome do produto, sem versão. Lista vazia quando a descrição não citar nenhuma.
+- paises: nomes de país em inglês ("Brazil"). Quase sempre apenas Brazil.
+
+Na dúvida sobre um CNAE, deixe-o de fora e coloque o termo em keywords.
 
 export async function parseNiche(
   description: string,

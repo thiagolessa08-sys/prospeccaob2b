@@ -8,6 +8,7 @@ export interface DepsDescobrirEmpresasHttp {
   tenantId: string;
   segredo: string;
   apiKeyCasaDosDados: string;
+  apiKeyLusha: string;
 }
 
 /**
@@ -29,6 +30,7 @@ export async function tratarDescobrirEmpresas(
     tenantId: deps.tenantId,
     campaignId,
     apiKey: deps.apiKeyCasaDosDados,
+    apiKeyLusha: deps.apiKeyLusha,
   });
 
   return new Response(JSON.stringify(resultado), { status: 200 });

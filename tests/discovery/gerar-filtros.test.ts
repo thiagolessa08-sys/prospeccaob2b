@@ -23,6 +23,9 @@ const FILTROS: NicheFilters = {
   max_employees: null,
   target_roles: ["Gerente de TI"],
   keywords: [],
+  setores: [],
+  tecnologias: [],
+  paises: [],
 };
 
 async function campanha(nicheDescription = "indústrias de climatização em SC") {

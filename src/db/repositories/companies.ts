@@ -221,3 +221,70 @@ export async function listarEmpresasDaCampanha(
   );
   return rows;
 }
+
+export interface NovaEmpresaExterna {
+  tenantId: string;
+  campaignId: string;
+  /** O id no fornecedor. É a chave de deduplicação, no lugar do CNPJ. */
+  externalId: string;
+  legalName: string;
+  website: string | null;
+  city: string | null;
+  uf: string | null;
+  employeeCount: number | null;
+  summary: string | null;
+  source: string;
+}
+
+/**
+ * Grava empresas que não vêm da Receita — hoje, as da Lusha.
+ *
+ * Função à parte de `salvarEmpresas` porque o alvo do `on conflict` é outro:
+ * lá é o índice parcial de CNPJ, aqui é o de `(tenant, source, external_id)`.
+ * O Postgres aceita um alvo por instrução, e juntar as duas num `insert` só
+ * exigiria escolher qual dedup vale — que é justamente a decisão que depende
+ * da origem.
+ *
+ * `cnpj` fica nulo de propósito: não há. A cadeia de enriquecimento sabe
+ * seguir sem ele desde a migration 0003, pulando a Receita e registrando a
+ * perda como tentativa vazia.
+ */
+export async function salvarEmpresasExternas(
+  db: Db,
+  empresas: readonly NovaEmpresaExterna[],
+): Promise<{ inseridas: number; ignoradas: number }> {
+  if (empresas.length === 0) return { inseridas: 0, ignoradas: 0 };
+
+  const valores: unknown[] = [];
+  const linhas = empresas.map((e, i) => {
+    const p = i * 9;
+    valores.push(
+      e.tenantId,
+      e.campaignId,
+      e.externalId,
+      e.legalName,
+      e.website,
+      e.city,
+      e.uf,
+      e.employeeCount,
+      e.source,
+    );
+    return `($${p + 1}, $${p + 2}, $${p + 3}, $${p + 4}, $${p + 5}, $${p + 6}, $${p + 7}, $${p + 8}, $${p + 9})`;
+  });
+
+  const { rows } = await db.query<{ id: string }>(
+    `insert into companies
+       (tenant_id, campaign_id, external_id, legal_name, website, city, uf,
+        employee_count, source)
+     values ${linhas.join(", ")}
+     on conflict (tenant_id, source, external_id) where external_id is not null
+     do nothing
+     returning id`,
+    valores,
+  );
+
+  return {
+    inseridas: rows.length,
+    ignoradas: empresas.length - rows.length,
+  };
+}

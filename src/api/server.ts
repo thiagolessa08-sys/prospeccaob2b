@@ -246,6 +246,7 @@ export function criarApp(deps: DepsDoApp): Hono {
       tenantId: deps.tenantId,
       segredo: deps.segredoN8n,
       apiKeyCasaDosDados: deps.apiKeyCasaDosDados,
+      apiKeyLusha: deps.apiKeyLusha,
     }),
   );
 

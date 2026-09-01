@@ -14,6 +14,9 @@ function filtros(overrides: Partial<NicheFilters> = {}): NicheFilters {
     max_employees: null,
     target_roles: [],
     keywords: [],
+    setores: [],
+    tecnologias: [],
+    paises: [],
     ...overrides,
   };
 }
