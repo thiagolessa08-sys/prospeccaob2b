@@ -7,6 +7,7 @@ import { tratarEnviarLote } from "./handlers/enviar-lote.js";
 import { tratarEnriquecerLote } from "./handlers/enriquecer-lote.js";
 import { tratarDescobrirEmpresas } from "./handlers/descobrir-empresas.js";
 import { tratarRetomarFollowups } from "./handlers/retomar-followups.js";
+import { tratarListarCampanhasAtivas } from "./handlers/listar-campanhas-ativas.js";
 
 export interface DepsDoApp {
   db: Db;
@@ -30,6 +31,16 @@ export function criarApp(deps: DepsDoApp): Hono {
   const app = new Hono();
 
   app.get("/saude", (c) => c.json({ ok: true }));
+
+  // Rota lenta (mas barata): o n8n consulta antes das quatro rotas de lote,
+  // para saber para quais campanhas disparar cada uma.
+  app.get("/campaigns/ativas", (c) =>
+    tratarListarCampanhasAtivas(c.req.raw, {
+      db: deps.db,
+      tenantId: deps.tenantId,
+      segredo: deps.segredoN8n,
+    }),
+  );
 
   app.post("/webhooks/instantly", (c) =>
     tratarWebhookInstantly(c.req.raw, {

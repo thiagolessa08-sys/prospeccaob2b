@@ -37,6 +37,16 @@ describe("rotas", () => {
     expect(await res.json()).toEqual({ ok: true });
   });
 
+  it("roteia a listagem de campanhas ativas", async () => {
+    const res = await app().request("/campaigns/ativas", {
+      headers: { "x-prospeccao-segredo": "segredo-n8n" },
+    });
+    expect(res.status).toBe(200);
+    // `subirBanco` já cria uma campanha de teste, ativa por padrão.
+    const corpo = (await res.json()) as Array<{ id: string }>;
+    expect(corpo.map((c) => c.id)).toContain(banco.campaignId);
+  });
+
   it("roteia o webhook do Instantly", async () => {
     const res = await app().request("/webhooks/instantly", {
       method: "POST",
