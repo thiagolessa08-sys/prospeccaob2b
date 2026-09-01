@@ -482,6 +482,41 @@ async function verEventos(id) {
   alvo.innerHTML = html + "</tbody></table></div>";
 }
 
+/**
+ * O que cada fonte respondeu, dentro da tentativa de uma empresa.
+ *
+ * O motivo devolvido pela cadeia e o resumo: "Nenhum decisor com e-mail
+ * utilizavel" cobre tanto "a Hunter procurou e nao achou" quanto "a Hunter
+ * recusou a chave com 401". A cadeia captura o erro de cada fonte, segue para
+ * a proxima e guarda o que houve aqui — sem mostrar, o diagnostico para no
+ * resumo e a causa real fica no banco.
+ *
+ * E tambem por onde aparece o "Forma recebida: ..." do adaptador da Lusha,
+ * que e como se descobre um nome de campo errado sem ter a resposta real dela
+ * em maos.
+ */
+function desenharTentativas(tentativas) {
+  if (!tentativas || !tentativas.length) return "";
+
+  var html = '<details style="margin-top:4px">';
+  html += '<summary class="vazio" style="cursor:pointer;font-size:12px">';
+  html += tentativas.length + " tentativa(s) por fonte</summary>";
+  html += '<div style="font-size:12px;margin-top:4px">';
+
+  for (var i = 0; i < tentativas.length; i++) {
+    var t = tentativas[i] || {};
+    var ruim = t.resultado === "erro";
+    html += '<div style="margin-bottom:2px">';
+    html += '<span class="etiqueta">' + esc(t.fonte) + "</span> ";
+    html += '<span style="color:' + (ruim ? "var(--erro)" : "var(--fraco)") + '">';
+    html += esc(t.resultado) + "</span>";
+    if (t.detalhe) html += ' <span class="vazio">' + esc(t.detalhe) + "</span>";
+    html += "</div>";
+  }
+
+  return html + "</div></details>";
+}
+
 /** Empresas descobertas, com o motivo de quem ficou sem decisor. */
 async function verEmpresas(id) {
   var alvo = $("leads-" + id);
@@ -518,6 +553,7 @@ async function verEmpresas(id) {
     html += '<td style="color:' + cor + '">' + esc(e.enrichment_status) + "</td>";
     html += "<td>" + esc(t.motivo || (e.enrichment_status === "pending" ? "ainda não tentada" : "—"));
     if (t.provedor) html += ' <span class="etiqueta">' + esc(t.provedor) + "</span>";
+    html += desenharTentativas(t.tentativas);
     html += "</td></tr>";
   }
 
