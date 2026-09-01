@@ -16,6 +16,7 @@ describe("alvoDaCampanha", () => {
     expect(alvoDaCampanha(["Gerente de TI"])).toEqual({
       tipo: "cargo_funcional",
       departamento: "it",
+      cargos: ["Gerente de TI"],
     });
   });
 
@@ -23,6 +24,7 @@ describe("alvoDaCampanha", () => {
     expect(alvoDaCampanha(["Diretor Financeiro"])).toEqual({
       tipo: "cargo_funcional",
       departamento: "finance",
+      cargos: ["Diretor Financeiro"],
     });
   });
 
@@ -30,12 +32,17 @@ describe("alvoDaCampanha", () => {
     expect(alvoDaCampanha(["Gerente Comercial"])).toEqual({
       tipo: "cargo_funcional",
       departamento: "sales",
+      cargos: ["Gerente Comercial"],
     });
   });
 
   it("usa o primeiro cargo que casar quando há vários", () => {
     const resultado = alvoDaCampanha(["Assistente", "Gerente de TI"]);
-    expect(resultado).toEqual({ tipo: "cargo_funcional", departamento: "it" });
+    expect(resultado).toEqual({
+      tipo: "cargo_funcional",
+      departamento: "it",
+      cargos: ["Assistente", "Gerente de TI"],
+    });
   });
 
   it("cai para sócio ou dono quando nada bate com um departamento conhecido", () => {
@@ -52,6 +59,7 @@ describe("alvoDaCampanha", () => {
     expect(alvoDaCampanha(["GERENTE DE TECNOLOGIA"])).toEqual({
       tipo: "cargo_funcional",
       departamento: "it",
+      cargos: ["GERENTE DE TECNOLOGIA"],
     });
   });
 });

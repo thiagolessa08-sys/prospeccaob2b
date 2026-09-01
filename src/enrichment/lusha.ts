@@ -271,16 +271,25 @@ export async function acharEmailPorNome(
  * Duas etapas: `prospecting` filtra e devolve prévia sem PII, `enrich` revela
  * o e-mail — e é só no segundo que o crédito de revelação é gasto.
  *
- * O `departamento` da cadeia vem em português (é o cargo-alvo da campanha) e
- * entra como `jobTitles`, não como `departments`: o filtro de departamento da
- * Lusha é uma lista fechada, que só aceita valores vindos de
- * `/contacts/prospecting/filters/departments`. Texto livre ali seria recusado.
+ * O filtro de cargo vem de `cargos` — os títulos como a campanha os escreveu,
+ * em português — e entra como `jobTitles`, que é texto livre.
+ *
+ * NÃO usa `departamento`. Aquilo é a sigla da Hunter (`finance`, `it`,
+ * `operations`), derivada dos cargos por `alvoDaCampanha` para o vocabulário
+ * DELA. Mandar `jobTitles: ["finance"]` procura literalmente por alguém com o
+ * título "finance", que não casa com ninguém — e o resultado vazio se
+ * disfarçaria de "a Lusha não tem contato nesta empresa".
+ *
+ * O `departments` da Lusha também não serve: é lista fechada, alimentada por
+ * `/v3/contacts/prospecting/filters/departments`, e a sigla da Hunter não é
+ * garantidamente um valor válido lá.
  */
 export async function buscarNoDominio(
   input: {
     dominio?: string;
     empresa?: string;
     departamento?: string;
+    cargos?: readonly string[];
     senioridade?: string;
     apiKey: string;
   },
@@ -291,8 +300,12 @@ export async function buscarNoDominio(
 
   const chamada = { apiKey: input.apiKey, fetch: deps.fetch };
 
+  const titulos = (input.cargos ?? []).filter(
+    (c) => typeof c === "string" && c.trim().length > 0,
+  );
+
   const contatos: Record<string, unknown> = {};
-  if (input.departamento) contatos.jobTitles = [input.departamento];
+  if (titulos.length > 0) contatos.jobTitles = titulos;
   if (input.senioridade) contatos.seniority = [input.senioridade];
 
   let busca: unknown;

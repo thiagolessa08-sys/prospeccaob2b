@@ -112,7 +112,7 @@ describe("enriquecerDecisor — caminho pago", () => {
     ]);
     const d = deps({ buscarDominio });
     const r = await enriquecerDecisor(
-      { ...ENTRADA, alvo: { tipo: "cargo_funcional", departamento: "it" } },
+      { ...ENTRADA, alvo: { tipo: "cargo_funcional", departamento: "it", cargos: ["Gerente de TI"] } },
       d,
     );
 
@@ -137,7 +137,7 @@ describe("enriquecerDecisor — caminho pago", () => {
     ]);
     const d = deps({ buscarDominio });
     const r = await enriquecerDecisor(
-      { ...ENTRADA, alvo: { tipo: "cargo_funcional", departamento: "it" } },
+      { ...ENTRADA, alvo: { tipo: "cargo_funcional", departamento: "it", cargos: ["Gerente de TI"] } },
       d,
     );
 
@@ -152,7 +152,7 @@ describe("enriquecerDecisor — caminho pago", () => {
     ]);
     const d = deps({ buscarDominio });
     const r = await enriquecerDecisor(
-      { ...ENTRADA, alvo: { tipo: "cargo_funcional", departamento: "it" } },
+      { ...ENTRADA, alvo: { tipo: "cargo_funcional", departamento: "it", cargos: ["Gerente de TI"] } },
       d,
     );
     if (!r.achou) throw new Error("esperava sucesso");
@@ -344,7 +344,7 @@ describe("enriquecerDecisor — empresa sem domínio", () => {
     });
 
     const r = await enriquecerDecisor(
-      { ...SEM_DOMINIO, alvo: { tipo: "cargo_funcional", departamento: "it" } },
+      { ...SEM_DOMINIO, alvo: { tipo: "cargo_funcional", departamento: "it", cargos: ["Gerente de TI"] } },
       d,
     );
 

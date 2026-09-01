@@ -517,6 +517,56 @@ function desenharTentativas(tentativas) {
   return html + "</div></details>";
 }
 
+/**
+ * O diagnostico agregado, antes da tabela.
+ *
+ * Sessenta empresas com o mesmo motivo nao se le linha a linha. O que
+ * interessa e a distribuicao: se um motivo cobre tudo, o problema e
+ * sistematico; se estao espalhados, e cobertura de fornecedor. Contar por
+ * fonte e resultado responde a pergunta que a tabela so responde depois de
+ * muita rolagem.
+ */
+function resumoDasEmpresas(empresas) {
+  var porStatus = {};
+  var porMotivo = {};
+  var porFonte = {};
+
+  for (var i = 0; i < empresas.length; i++) {
+    var e = empresas[i];
+    porStatus[e.enrichment_status] = (porStatus[e.enrichment_status] || 0) + 1;
+
+    var t = e.ultima_tentativa;
+    if (!t) continue;
+    if (t.motivo) porMotivo[t.motivo] = (porMotivo[t.motivo] || 0) + 1;
+
+    var lista = t.tentativas || [];
+    for (var j = 0; j < lista.length; j++) {
+      var chave = (lista[j].fonte || "?") + " · " + (lista[j].resultado || "?");
+      porFonte[chave] = (porFonte[chave] || 0) + 1;
+    }
+  }
+
+  var html = '<div class="cartao" style="margin:10px 0;background:var(--codigo)">';
+  html += contagens("Status", porStatus);
+  html += contagens("Motivos", porMotivo);
+  html += contagens("O que cada fonte respondeu", porFonte);
+  return html + "</div>";
+}
+
+function contagens(titulo, mapa) {
+  var chaves = Object.keys(mapa);
+  if (!chaves.length) return "";
+  chaves.sort(function (a, b) { return mapa[b] - mapa[a]; });
+
+  var html = '<div style="margin-bottom:6px"><span class="vazio" style="font-size:12px">'
+    + titulo + ":</span> ";
+  for (var i = 0; i < chaves.length; i++) {
+    html += '<span class="etiqueta" style="margin-right:4px">'
+      + esc(chaves[i]) + " <b>" + mapa[chaves[i]] + "</b></span>";
+  }
+  return html + "</div>";
+}
+
 /** Empresas descobertas, com o motivo de quem ficou sem decisor. */
 async function verEmpresas(id) {
   var alvo = $("leads-" + id);
@@ -534,7 +584,8 @@ async function verEmpresas(id) {
     return;
   }
 
-  var html = '<div class="rolagem"><table><thead><tr><th>Empresa</th><th>CNPJ</th>';
+  var html = resumoDasEmpresas(empresas);
+  html += '<div class="rolagem"><table><thead><tr><th>Empresa</th><th>CNPJ</th>';
   html += "<th>Cidade/UF</th><th>Func.</th><th>Status</th><th>Por qu&ecirc;</th>";
   html += "</tr></thead><tbody>";
 

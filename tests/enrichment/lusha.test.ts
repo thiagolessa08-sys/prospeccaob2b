@@ -167,7 +167,8 @@ describe("buscarNoDominio (Lusha)", () => {
     const achados = await buscarNoDominio(
       {
         dominio: "alfa.com.br",
-        departamento: "Gerente de TI",
+        departamento: "it",
+        cargos: ["Gerente de TI"],
         senioridade: "manager",
         apiKey: "k",
       },
@@ -186,22 +187,44 @@ describe("buscarNoDominio (Lusha)", () => {
     });
   });
 
-  it("manda o cargo como jobTitles, não como departments", async () => {
-    // `departments` da Lusha é lista fechada, alimentada por
-    // /contacts/prospecting/filters/departments. O cargo-alvo da campanha é
-    // texto livre em português, e seria recusado ali.
+  it("filtra por jobTitles vindos dos cargos, e nunca pela sigla da Hunter", async () => {
+    // `departamento` e o vocabulario da Hunter (`finance`), derivado dos
+    // cargos por `alvoDaCampanha`. Mandar isso como titulo procura por alguem
+    // chamado "finance" — e o vazio resultante se disfarcaria de "a Lusha nao
+    // tem contato nesta empresa".
     const { fetchFalso, chamadas } = servidor({ data: [] });
 
     await buscarNoDominio(
-      { dominio: "alfa.com.br", departamento: "Diretor Industrial", apiKey: "k" },
+      {
+        dominio: "alfa.com.br",
+        departamento: "finance",
+        cargos: ["Diretor de Operações", "Gerente de Controladoria"],
+        apiKey: "k",
+      },
       { fetch: fetchFalso },
     );
 
     const filtros = chamadas[0]?.corpo.filters;
-    expect(filtros.contacts.include.jobTitles).toEqual(["Diretor Industrial"]);
+    expect(filtros.contacts.include.jobTitles).toEqual([
+      "Diretor de Operações",
+      "Gerente de Controladoria",
+    ]);
+    expect(JSON.stringify(filtros)).not.toContain("finance");
     expect(filtros.contacts.include.departments).toBeUndefined();
     expect(filtros.companies.include.domains).toEqual(["alfa.com.br"]);
   });
+
+  it("sem cargos, busca a empresa inteira em vez de filtrar por nada", async () => {
+    const { fetchFalso, chamadas } = servidor({ data: [] });
+
+    await buscarNoDominio(
+      { dominio: "alfa.com.br", departamento: "finance", apiKey: "k" },
+      { fetch: fetchFalso },
+    );
+
+    expect(chamadas[0]?.corpo.filters.contacts).toBeUndefined();
+  });
+
 
   it("não enriquece quando a busca não devolve ninguém", async () => {
     // O enrich é a etapa que cobra. Chamá-lo com lista vazia seria gastar

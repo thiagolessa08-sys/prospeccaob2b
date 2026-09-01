@@ -17,7 +17,22 @@ import type {
  */
 export type AlvoDaCampanha =
   | { tipo: "socio_ou_dono" }
-  | { tipo: "cargo_funcional"; departamento: string; senioridade?: string };
+  | {
+      tipo: "cargo_funcional";
+      /** Departamento no vocabulário da Hunter (`finance`, `it`, `operations`). */
+      departamento: string;
+      senioridade?: string;
+      /**
+       * Os cargos como a campanha os escreveu, em português.
+       *
+       * Viajam ao lado do departamento porque os dois fornecedores querem
+       * coisas diferentes: a Hunter filtra por uma lista fechada de
+       * departamentos em inglês, e a Lusha filtra por título de cargo em
+       * texto livre. Mandar a sigla da Hunter como título para a Lusha
+       * procura literalmente por "finance", que não casa com ninguém.
+       */
+      cargos: readonly string[];
+    };
 
 export interface TentativaDeFonte {
   fonte: FonteDoDecisor;
@@ -193,6 +208,10 @@ export async function enriquecerDecisor(
         entrada.alvo.tipo === "cargo_funcional" ? entrada.alvo.departamento : undefined,
       senioridade:
         entrada.alvo.tipo === "cargo_funcional" ? entrada.alvo.senioridade : undefined,
+      // Os cargos em português, para quem filtra por título em vez de por
+      // departamento. Quem não usa, ignora.
+      cargos:
+        entrada.alvo.tipo === "cargo_funcional" ? entrada.alvo.cargos : undefined,
       apiKey: entrada.apiKey,
     });
 

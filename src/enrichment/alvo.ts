@@ -63,7 +63,7 @@ export function alvoDaCampanha(targetRoles: readonly string[]): AlvoDaCampanha {
 
   for (const [departamento, palavras] of Object.entries(PALAVRAS_POR_DEPARTAMENTO)) {
     if (normalizados.some((cargo) => palavras.some((p) => cargo.includes(normalizarTexto(p))))) {
-      return { tipo: "cargo_funcional", departamento };
+      return { tipo: "cargo_funcional", departamento, cargos: targetRoles };
     }
   }
 

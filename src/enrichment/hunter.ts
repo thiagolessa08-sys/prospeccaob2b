@@ -125,6 +125,8 @@ export async function buscarNoDominio(
     dominio?: string;
     empresa?: string;
     departamento?: string;
+    /** Ignorado aqui: a Hunter filtra por departamento, não por título. */
+    cargos?: readonly string[];
     senioridade?: string;
     apiKey: string;
   },
