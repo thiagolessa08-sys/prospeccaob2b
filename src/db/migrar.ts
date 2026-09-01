@@ -27,12 +27,63 @@ import { dirname, join } from "node:path";
 const aqui = dirname(fileURLToPath(import.meta.url));
 const MIGRATION = join(aqui, "../supabase/migrations/0001_initial_schema.sql");
 
+/**
+ * Nunca deixe a connection string chegar a um log: ela carrega a senha do
+ * banco em texto claro. O primeiro deploy no Railway imprimiu a senha do
+ * Postgres onze vezes nos logs, porque o erro do `pg` embute a string inteira
+ * na mensagem — mesma disciplina que `urlSegura` em src/http/fetch-json.ts já
+ * aplica às chaves de API.
+ */
+function semSegredo(texto: string, url: string): string {
+  let limpo = texto.split(url).join("[DATABASE_URL]");
+  try {
+    const senha = new URL(url).password;
+    if (senha) limpo = limpo.split(senha).join("***");
+  } catch {
+    // URL malformada não tem senha isolável; o split acima já cobriu o caso
+    // de a string inteira aparecer na mensagem.
+  }
+  return limpo;
+}
+
 const url = process.env.DATABASE_URL?.trim();
 if (!url) {
   console.error("DATABASE_URL não definida.");
   process.exit(1);
 }
 
+/**
+ * Valida o formato antes de conectar.
+ *
+ * Sem isto, uma DATABASE_URL malformada só se manifesta como
+ * `database "..." does not exist` — que manda procurar o problema no banco,
+ * quando ele está na variável de ambiente. Aconteceu de verdade: duas
+ * connection strings coladas viraram um "nome de banco" gigante.
+ */
+let alvo: URL;
+try {
+  alvo = new URL(url);
+} catch {
+  console.error(
+    "DATABASE_URL não é uma URL válida. Esperado: postgresql://usuario:senha@host:porta/banco",
+  );
+  process.exit(1);
+}
+if (!/^postgres(ql)?:$/.test(alvo.protocol)) {
+  console.error(
+    `DATABASE_URL tem protocolo "${alvo.protocol}", esperado "postgresql:".`,
+  );
+  process.exit(1);
+}
+if (url.lastIndexOf("postgres://") > 0 || url.lastIndexOf("postgresql://") > 0) {
+  console.error(
+    "DATABASE_URL parece conter DUAS connection strings emendadas. " +
+      "No Railway o valor deve ser apenas a referência ${{Postgres.DATABASE_URL}}.",
+  );
+  process.exit(1);
+}
+
+console.log(`Conectando em ${alvo.hostname}:${alvo.port || 5432}${alvo.pathname}`);
 const cliente = new pg.Client({ connectionString: url });
 
 try {
@@ -54,7 +105,8 @@ try {
   );
   console.log(`Tabelas: ${tabelas.map((t) => t.nome).join(", ")}`);
 } catch (erro) {
-  console.error(`Falhou: ${erro instanceof Error ? erro.message : erro}`);
+  const bruto = erro instanceof Error ? erro.message : String(erro);
+  console.error(`Falhou: ${semSegredo(bruto, url)}`);
   process.exit(1);
 } finally {
   await cliente.end();
