@@ -74,6 +74,7 @@ function localizarEmpresa(
 
 export async function acharEmailPorNome(
   input: {
+    idExterno?: string;
     dominio?: string;
     empresa?: string;
     primeiroNome: string;
@@ -122,6 +123,7 @@ interface RespostaDominio {
 
 export async function buscarNoDominio(
   input: {
+    idExterno?: string;
     dominio?: string;
     empresa?: string;
     departamento?: string;

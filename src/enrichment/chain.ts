@@ -53,7 +53,16 @@ export interface EntradaEnriquecimento {
    * descoberta pela Lusha impossível de usar.
    */
   cnpj: string | null;
-  /** Razão social ou nome fantasia. Único localizador quando não há CNPJ. */
+  /**
+   * O id da empresa no fornecedor de contatos, quando ela veio de lá.
+   *
+   * É o localizador exato. A empresa foi descoberta NA Lusha, então pedir os
+   * contatos dela por id não depende de o domínio ou o nome casarem de novo —
+   * perguntar por domínio a uma base que acabou de nos entregar aquela
+   * empresa é reabrir uma porta que já estava aberta.
+   */
+  idExterno: string | null;
+  /** Razão social ou nome fantasia. Localizador quando não há id nem domínio. */
   nomeDaEmpresa: string;
   dominio: string | null;
   apiKey: string;
@@ -208,11 +217,22 @@ export async function enriquecerDecisor(
   // de procurar o decisor.
   const dominio = entrada.dominio ?? dominioDoEmail(empresa.email);
   const nomeDaEmpresa = empresa.nomeFantasia?.trim() || empresa.razaoSocial.trim();
-  const localizador: { dominio?: string; empresa?: string } = dominio
-    ? { dominio }
-    : { empresa: nomeDaEmpresa };
+  /**
+   * Os três localizadores vão juntos; cada fornecedor escolhe o que entende.
+   *
+   * A Lusha usa o id — exato, e o que faz a descoberta por ela valer a pena:
+   * a empresa veio do grafo dela, pedir os contatos por esse id não depende
+   * de nenhum casamento de texto. A Hunter ignora o id e usa domínio ou nome.
+   *
+   * Mandar só o id quebraria a Hunter; mandar só o domínio desperdiça a
+   * informação mais precisa que temos.
+   */
+  const localizador: { idExterno?: string; dominio?: string; empresa?: string } = {};
+  if (entrada.idExterno) localizador.idExterno = entrada.idExterno;
+  if (dominio) localizador.dominio = dominio;
+  if (nomeDaEmpresa) localizador.empresa = nomeDaEmpresa;
 
-  if (!dominio && !nomeDaEmpresa) {
+  if (Object.keys(localizador).length === 0) {
     tentativas.push({
       fonte: FONTE_FINDER,
       resultado: "vazio",

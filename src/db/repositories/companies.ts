@@ -15,7 +15,7 @@ export interface NovaEmpresa {
   source: string;
 }
 
-const COLUNAS = `id, tenant_id, campaign_id, cnpj, legal_name, trade_name,
+const COLUNAS = `id, tenant_id, campaign_id, cnpj, external_id, legal_name, trade_name,
   website, city, uf, employee_count, summary, source, enrichment_status,
   created_at`;
 

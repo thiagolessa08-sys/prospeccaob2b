@@ -210,11 +210,20 @@ function traduzirStatus(bruto: unknown): StatusVerificacao {
   }
 }
 
-/** Como a empresa entra no filtro: domínio de preferência, nome se faltar. */
+/**
+ * Como a empresa entra no filtro: id exato, depois domínio, depois nome.
+ *
+ * `ids` é o caminho que faz a descoberta pela Lusha valer a pena. A empresa
+ * veio do grafo dela com um id; pedir os contatos por esse id não depende de
+ * nenhum casamento de texto. Domínio e nome ficam para empresa que veio de
+ * outra fonte.
+ */
 function empresaNoFiltro(input: {
+  idExterno?: string;
   dominio?: string;
   empresa?: string;
 }): Record<string, unknown> | null {
+  if (input.idExterno) return { ids: [input.idExterno] };
   if (input.dominio) return { domains: [input.dominio] };
   if (input.empresa) return { names: [input.empresa] };
   return null;
@@ -287,6 +296,7 @@ function paraCandidato(
  */
 export async function acharEmailPorNome(
   input: {
+    idExterno?: string;
     dominio?: string;
     empresa?: string;
     primeiroNome: string;
@@ -359,6 +369,7 @@ export async function acharEmailPorNome(
  */
 export async function buscarNoDominio(
   input: {
+    idExterno?: string;
     dominio?: string;
     empresa?: string;
     departamento?: string;

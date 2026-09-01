@@ -7,7 +7,6 @@ import type { DadosDaEmpresa } from "../../src/enrichment/types.js";
 
 const EMPRESA: DadosDaEmpresa = {
   cnpj: "11222333000181",
-  nomeDaEmpresa: "ALFA LTDA",
   razaoSocial: "ALFA ALIMENTOS LTDA",
   nomeFantasia: "ALFA ALIMENTOS",
   cnaePrincipal: "1091101",
@@ -33,6 +32,7 @@ function deps(overrides: Partial<DepsEnriquecimento> = {}): DepsEnriquecimento {
 
 const ENTRADA = {
   cnpj: "11222333000181",
+  idExterno: null,
   nomeDaEmpresa: "ALFA LTDA",
   dominio: "alfa.com.br",
   apiKey: "chave",

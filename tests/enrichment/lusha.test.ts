@@ -485,3 +485,42 @@ describe("segunda busca sem filtro de cargo", () => {
     expect(chamadas).toHaveLength(1);
   });
 });
+
+describe("o id da empresa é o localizador exato", () => {
+  it("usa `ids` quando a empresa veio da própria Lusha", async () => {
+    // A empresa foi descoberta no grafo dela e traz um id. Pedir os contatos
+    // por domínio nesse caso é fazer a base reconhecer de novo algo que ela
+    // mesma acabou de entregar — o passo onde Receita e Lusha já falharam em
+    // se casar.
+    const { fetchFalso, chamadas } = servidor({ results: [] });
+
+    await buscarNoDominio(
+      {
+        idExterno: "v1.company.abc",
+        dominio: "alfa.com.br",
+        empresa: "Alfa Alimentos",
+        apiKey: "k",
+      },
+      { fetch: fetchFalso },
+    );
+
+    const empresas = chamadas[0]?.corpo.filters.companies.include;
+    expect(empresas.ids).toEqual(["v1.company.abc"]);
+    // Id exato dispensa os outros: mandar junto só estreitaria a busca.
+    expect(empresas.domains).toBeUndefined();
+    expect(empresas.names).toBeUndefined();
+  });
+
+  it("cai para domínio quando não há id", async () => {
+    const { fetchFalso, chamadas } = servidor({ results: [] });
+
+    await buscarNoDominio(
+      { dominio: "alfa.com.br", empresa: "Alfa", apiKey: "k" },
+      { fetch: fetchFalso },
+    );
+
+    expect(chamadas[0]?.corpo.filters.companies.include.domains).toEqual([
+      "alfa.com.br",
+    ]);
+  });
+});

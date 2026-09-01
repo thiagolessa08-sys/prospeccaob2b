@@ -101,6 +101,9 @@ export async function enriquecerLote(
         {
           cnpj: empresa.cnpj,
           nomeDaEmpresa: empresa.trade_name?.trim() || empresa.legal_name.trim(),
+          // O id da empresa no fornecedor, quando ela veio de lá. É o
+          // localizador exato da busca de contatos.
+          idExterno: empresa.external_id,
           // O site cadastrado quando existe. Empresa vinda da Lusha traz
           // domínio aqui; empresa da Receita chega sem, e a cadeia deriva do
           // e-mail declarado ou cai na razão social.
