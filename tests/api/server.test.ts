@@ -24,6 +24,7 @@ function app() {
     tenantId: banco.tenantId,
     segredoInstantly: SEGREDO_INSTANTLY,
     segredoCalcom: SEGREDO_CALCOM,
+    segredoN8n: "segredo-n8n",
   });
 }
 

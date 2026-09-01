@@ -136,6 +136,48 @@ export async function transicionarLead(
   return rows[0];
 }
 
+export interface CamposParaAtualizar {
+  needsHuman?: boolean;
+  handoffReason?: string;
+  resumeAt?: Date;
+}
+
+/**
+ * Atualiza campos do lead sem mudar de estágio.
+ *
+ * `transicionarLead` exige uma transição válida — inclusive recusa
+ * autotransição — mas repassar a um humano, agendar uma retomada futura, ou
+ * simplesmente responder a uma dúvida não move o lead de `in_conversation`.
+ * Forçar essas mudanças por `transicionarLead` exigiria um estágio de
+ * destino igual ao de origem, que a máquina de estados recusa de propósito.
+ */
+export async function atualizarLead(
+  db: Db,
+  tenantId: string,
+  id: string,
+  campos: CamposParaAtualizar,
+): Promise<Lead> {
+  const { rows } = await db.query<Lead>(
+    `update leads set
+       needs_human = coalesce($3, needs_human),
+       handoff_reason = coalesce($4, handoff_reason),
+       resume_at = coalesce($5, resume_at)
+     where tenant_id = $1 and id = $2
+     returning ${COLUNAS}`,
+    [
+      tenantId,
+      id,
+      campos.needsHuman ?? null,
+      campos.handoffReason ?? null,
+      campos.resumeAt ?? null,
+    ],
+  );
+  if (!rows[0]) {
+    throw new Error(`Lead ${id} não encontrado no tenant ${tenantId}.`);
+  }
+  return rows[0];
+}
+
 export async function incrementarTrocas(
   db: Db,
   tenantId: string,

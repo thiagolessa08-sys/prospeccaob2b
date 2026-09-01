@@ -11,6 +11,14 @@ const EnvSchema = z.object({
   TENANT_ID: z.string().min(1),
   INSTANTLY_WEBHOOK_SECRET: z.string().min(1),
   CALCOM_WEBHOOK_SECRET: z.string().min(1),
+  /**
+   * Vazio por padrão: sem uma validação real registrada, o provedor do
+   * Instantly recusa construir — o produto inteiro depende de um padrão
+   * (assunto e corpo por lead em custom variables) que a documentação dele
+   * não descreve. Preencher aqui é o ato deliberado de dizer "já testei".
+   */
+  INSTANTLY_PREMISSA_VALIDADA_EM: z.string().optional().default(""),
+  N8N_SHARED_SECRET: z.string().min(1),
 });
 
 export type Env = z.infer<typeof EnvSchema>;

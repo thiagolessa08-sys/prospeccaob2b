@@ -9,6 +9,7 @@ import { criarLead } from "../../../src/db/repositories/leads.js";
 import {
   anexarMensagem,
   carregarConversa,
+  atualizarClassificacao,
 } from "../../../src/db/repositories/messages.js";
 
 let banco: BancoDeTeste;
@@ -160,5 +161,46 @@ describe("carregarConversa", () => {
       "99999999-9999-9999-9999-999999999999",
     );
     expect(conversa).toEqual([]);
+  });
+});
+
+describe("atualizarClassificacao", () => {
+  it("grava intent, confidence e ai_reasoning numa mensagem existente", async () => {
+    const gravada = await anexarMensagem(banco.db, {
+      tenantId: banco.tenantId,
+      leadId,
+      direction: "inbound",
+      body: "Quero marcar uma conversa.",
+    });
+    await atualizarClassificacao(banco.db, banco.tenantId, gravada!.id, {
+      intent: "interested",
+      confidence: 0.92,
+      aiReasoning: "Pediu para conversar.",
+    });
+
+    const conversa = await carregarConversa(banco.db, banco.tenantId, leadId);
+    const relida = conversa.find((m) => m.id === gravada!.id);
+    expect(relida?.intent).toBe("interested");
+    expect(Number(relida?.confidence)).toBeCloseTo(0.92);
+    expect(relida?.ai_reasoning).toBe("Pediu para conversar.");
+  });
+
+  it("não afeta mensagem de outro tenant", async () => {
+    const gravada = await anexarMensagem(banco.db, {
+      tenantId: banco.tenantId,
+      leadId,
+      direction: "inbound",
+      body: "Mensagem para não vazar.",
+    });
+    const vizinho = await criarTenantVizinho(banco.db, "0aa2");
+    await atualizarClassificacao(banco.db, vizinho.tenantId, gravada!.id, {
+      intent: "no",
+      confidence: 0.5,
+      aiReasoning: "não deveria gravar",
+    });
+
+    const conversa = await carregarConversa(banco.db, banco.tenantId, leadId);
+    const relida = conversa.find((m) => m.id === gravada!.id);
+    expect(relida?.intent).toBeNull();
   });
 });

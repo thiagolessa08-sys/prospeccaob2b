@@ -83,6 +83,39 @@ export async function anexarMensagem(
   return rows[0] ?? null;
 }
 
+export interface Classificacao {
+  intent: ReplyIntent;
+  confidence: number;
+  aiReasoning: string;
+}
+
+/**
+ * Grava a classificação de uma mensagem recebida já existente.
+ *
+ * O webhook nunca chama a IA — só anexa a mensagem crua. A classificação
+ * acontece depois, na orquestração da conversa, e precisa atualizar a mesma
+ * linha em vez de criar outra: senão a conversa mostraria a resposta do lead
+ * duas vezes.
+ */
+export async function atualizarClassificacao(
+  db: Db,
+  tenantId: string,
+  messageId: string,
+  classificacao: Classificacao,
+): Promise<void> {
+  await db.query(
+    `update messages set intent = $3, confidence = $4, ai_reasoning = $5
+     where tenant_id = $1 and id = $2`,
+    [
+      tenantId,
+      messageId,
+      classificacao.intent,
+      classificacao.confidence,
+      classificacao.aiReasoning,
+    ],
+  );
+}
+
 export async function carregarConversa(
   db: Db,
   tenantId: string,

@@ -2,12 +2,14 @@ import { Hono } from "hono";
 import type { Db } from "../db/port.js";
 import { tratarWebhookInstantly } from "./handlers/instantly-webhook.js";
 import { tratarWebhookCalcom } from "./handlers/calcom-webhook.js";
+import { tratarProcessarResposta } from "./handlers/processar-resposta.js";
 
 export interface DepsDoApp {
   db: Db;
   tenantId: string;
   segredoInstantly: string;
   segredoCalcom: string;
+  segredoN8n: string;
 }
 
 /**
@@ -36,6 +38,16 @@ export function criarApp(deps: DepsDoApp): Hono {
       db: deps.db,
       tenantId: deps.tenantId,
       segredo: deps.segredoCalcom,
+    }),
+  );
+
+  // Rota lenta: o n8n dispara depois que o webhook já confirmou a chegada da
+  // resposta. Nunca é chamada pelo webhook em si.
+  app.post("/leads/:id/processar-resposta", (c) =>
+    tratarProcessarResposta(c.req.raw, c.req.param("id"), {
+      db: deps.db,
+      tenantId: deps.tenantId,
+      segredo: deps.segredoN8n,
     }),
   );
 

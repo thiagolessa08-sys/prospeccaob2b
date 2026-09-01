@@ -10,6 +10,7 @@ const app = criarApp({
   tenantId: ambiente.TENANT_ID,
   segredoInstantly: ambiente.INSTANTLY_WEBHOOK_SECRET,
   segredoCalcom: ambiente.CALCOM_WEBHOOK_SECRET,
+  segredoN8n: ambiente.N8N_SHARED_SECRET,
 });
 
 const porta = Number(process.env.PORT ?? 3000);

@@ -10,6 +10,7 @@ import {
   buscarLead,
   buscarLeadPorEmail,
   marcarBounce,
+  atualizarLead,
   transicionarLead,
   incrementarTrocas,
   listarProntosParaContato,
@@ -320,5 +321,59 @@ describe("marcarBounce", () => {
 
     const relido = await buscarLead(banco.db, banco.tenantId, lead.id);
     expect(relido?.bounced_at).toBeNull();
+  });
+});
+
+describe("atualizarLead", () => {
+  it("marca needs_human sem exigir mudança de estágio", async () => {
+    const lead = await criarLead(banco.db, novoLead());
+    const atualizado = await atualizarLead(banco.db, banco.tenantId, lead.id, {
+      needsHuman: true,
+      handoffReason: "conversa longa sem desfecho",
+    });
+    expect(atualizado.needs_human).toBe(true);
+    expect(atualizado.handoff_reason).toBe("conversa longa sem desfecho");
+    expect(atualizado.stage).toBe(lead.stage);
+  });
+
+  it("grava a data de retomada", async () => {
+    const lead = await criarLead(banco.db, novoLead());
+    const quando = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
+    await atualizarLead(banco.db, banco.tenantId, lead.id, { resumeAt: quando });
+    const relido = await buscarLead(banco.db, banco.tenantId, lead.id);
+    expect(relido!.resume_at!.toISOString()).toBe(quando.toISOString());
+  });
+
+  it("preserva campos não informados", async () => {
+    const lead = await criarLead(banco.db, novoLead());
+    await atualizarLead(banco.db, banco.tenantId, lead.id, { needsHuman: true });
+    await atualizarLead(banco.db, banco.tenantId, lead.id, {
+      handoffReason: "motivo novo",
+    });
+    const relido = await buscarLead(banco.db, banco.tenantId, lead.id);
+    expect(relido?.needs_human).toBe(true);
+    expect(relido?.handoff_reason).toBe("motivo novo");
+  });
+
+  it("lança quando o lead não existe", async () => {
+    await expect(
+      atualizarLead(
+        banco.db,
+        banco.tenantId,
+        "99999999-9999-9999-9999-999999999999",
+        { needsHuman: true },
+      ),
+    ).rejects.toThrow(/não encontrado/i);
+  });
+
+  it("não afeta lead de outro tenant", async () => {
+    const lead = await criarLead(banco.db, novoLead());
+    const vizinho = await criarTenantVizinho(banco.db, "0aa1");
+    await expect(
+      atualizarLead(banco.db, vizinho.tenantId, lead.id, { needsHuman: true }),
+    ).rejects.toThrow(/não encontrado/i);
+
+    const relido = await buscarLead(banco.db, banco.tenantId, lead.id);
+    expect(relido?.needs_human).toBe(false);
   });
 });

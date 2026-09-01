@@ -12,6 +12,8 @@ const validSource = {
   TENANT_ID: "11111111-1111-1111-1111-111111111111",
   INSTANTLY_WEBHOOK_SECRET: "segredo-instantly",
   CALCOM_WEBHOOK_SECRET: "segredo-calcom",
+  N8N_SHARED_SECRET: "segredo-n8n",
+  INSTANTLY_PREMISSA_VALIDADA_EM: "",
 };
 
 describe("loadEnv", () => {
