@@ -17,6 +17,12 @@ export interface ResultadoDoEnriquecimentoEmLote {
   processadas: number;
   encontrados: number;
   falhas: number;
+  /** Qual fornecedor rodou este lote. */
+  provedor?: string;
+  /** As causas mais frequentes, já contadas. Vazio quando não houve falha. */
+  motivos_das_falhas?: string;
+  /** O que cada fonte respondeu, contado — inclui o texto do erro. */
+  fontes_das_falhas?: string;
   motivo: string;
 }
 
@@ -76,6 +82,19 @@ export async function enriquecerLote(
   let encontrados = 0;
   let falhas = 0;
 
+  /**
+   * O diagnóstico do lote, contado enquanto ele roda.
+   *
+   * A resposta do botão dizia só "N falhas", e a causa exigia abrir Ver
+   * empresas e expandir linha por linha. Contar aqui põe a explicação no
+   * mesmo lugar onde o operador já está olhando.
+   */
+  const motivos = new Map<string, number>();
+  const porFonte = new Map<string, number>();
+  const contar = (mapa: Map<string, number>, chave: string) => {
+    mapa.set(chave, (mapa.get(chave) ?? 0) + 1);
+  };
+
   for (const empresa of pendentes) {
     try {
       if (!empresa.cnpj) {
@@ -89,6 +108,8 @@ export async function enriquecerLote(
           kind: "empresa_sem_cnpj",
           payload: { companyId: empresa.id },
         });
+        contar(motivos, "Empresa sem CNPJ salvo.");
+        contar(porFonte, "sem cnpj");
         falhas += 1;
         continue;
       }
@@ -128,6 +149,24 @@ export async function enriquecerLote(
       if (!resultado.achou) {
         await marcarEnriquecimento(db, tenantId, empresa.id, "failed");
         falhas += 1;
+
+        /**
+         * Guarda o motivo e o que cada fonte respondeu, para o resumo do lote.
+         *
+         * Sem isto, a resposta do botão é "20 falhas" e a causa só aparece
+         * clicando em Ver empresas e abrindo linha por linha. Custou várias
+         * rodadas de diagnóstico às cegas — a informação existia e estava a
+         * dois cliques de distância de quem precisava dela.
+         */
+        contar(motivos, resultado.motivo);
+        for (const tentativa of resultado.tentativas) {
+          const rotulo =
+            `${tentativa.fonte} · ${tentativa.resultado}` +
+            (tentativa.resultado === "erro" && tentativa.detalhe
+              ? `: ${tentativa.detalhe}`
+              : "");
+          contar(porFonte, rotulo);
+        }
         continue;
       }
 
@@ -142,6 +181,9 @@ export async function enriquecerLote(
       await marcarEnriquecimento(db, tenantId, empresa.id, "enriched");
       encontrados += 1;
     } catch (erro) {
+      const mensagemDoErro = erro instanceof Error ? erro.message : String(erro);
+      contar(motivos, "Exceção durante o enriquecimento.");
+      contar(porFonte, "exceção: " + mensagemDoErro);
       falhas += 1;
       await registrarEvento(db, {
         tenantId,
@@ -149,7 +191,7 @@ export async function enriquecerLote(
         kind: "falha_no_enriquecimento",
         payload: {
           companyId: empresa.id,
-          erro: erro instanceof Error ? erro.message : String(erro),
+          erro: mensagemDoErro,
         },
       }).catch(() => {
         // Igual ao padrão do lote de envio: se nem o evento grava, o banco
@@ -158,10 +200,26 @@ export async function enriquecerLote(
     }
   }
 
+  /** As três causas mais frequentes, da mais comum para a menos. */
+  const maisComuns = (mapa: Map<string, number>): string =>
+    [...mapa.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3)
+      .map(([chave, quantas]) => `${chave} (${quantas})`)
+      .join("; ");
+
+  const diagnostico = falhas > 0 ? maisComuns(porFonte) : "";
+
   return {
     processadas: pendentes.length,
     encontrados,
     falhas,
-    motivo: `Processadas ${pendentes.length}, ${encontrados} decisor(es) encontrado(s), ${falhas} falha(s).`,
+    provedor: provedor.nome,
+    motivos_das_falhas: maisComuns(motivos),
+    fontes_das_falhas: diagnostico,
+    motivo:
+      `Processadas ${pendentes.length}, ${encontrados} decisor(es) encontrado(s), ` +
+      `${falhas} falha(s) via ${provedor.nome}.` +
+      (diagnostico ? ` Principal causa: ${diagnostico}` : ""),
   };
 }
