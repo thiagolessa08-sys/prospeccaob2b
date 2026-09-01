@@ -418,3 +418,70 @@ describe("formatos reais da V3 nos contatos", () => {
     expect(chamadas).toHaveLength(2);
   });
 });
+
+describe("segunda busca sem filtro de cargo", () => {
+  it("tenta de novo sem cargo quando a primeira volta vazia", async () => {
+    // "Nenhum contato" tem duas causas que a mesma resposta não distingue: a
+    // Lusha não tem ninguém da empresa, ou tem e os cargos em português não
+    // casaram com o índice dela. Sem esta segunda busca, as duas viram
+    // "vazio" e a conclusão errada é "a Lusha não cobre empresa brasileira".
+    const chamadas: any[] = [];
+    let n = 0;
+    const fetchFalso = vi.fn(async (_url: unknown, init?: RequestInit) => {
+      n += 1;
+      chamadas.push(init?.body ? JSON.parse(String(init.body)) : null);
+      if (n === 1) return new Response(JSON.stringify({ results: [] }), { status: 200 });
+      if (n === 2) {
+        return new Response(
+          JSON.stringify({ results: [{ id: "v1.z", canReveal: [{ field: "emails" }] }] }),
+          { status: 200 },
+        );
+      }
+      return new Response(
+        JSON.stringify({
+          results: [{ id: "v1.z", firstName: "Ana", email: "ana@alfa.com.br" }],
+        }),
+        { status: 200 },
+      );
+    });
+
+    const achados = await buscarNoDominio(
+      { dominio: "alfa.com.br", cargos: ["Diretor de Operações"], apiKey: "k" },
+      { fetch: fetchFalso as unknown as typeof fetch },
+    );
+
+    expect(achados).toHaveLength(1);
+    // A primeira busca leva o cargo; a segunda não.
+    expect(chamadas[0].filters.contacts.include.jobTitles).toEqual([
+      "Diretor de Operações",
+    ]);
+    expect(chamadas[1].filters.contacts).toBeUndefined();
+    // Confiança rebaixada: é da empresa certa, mas o cargo não foi filtrado.
+    expect(achados[0]?.confianca).toBeLessThanOrEqual(55);
+  });
+
+  it("não faz a segunda busca quando a primeira já achou", async () => {
+    const { fetchFalso, chamadas } = servidor(
+      { results: [{ id: "v1.a", canReveal: [{ field: "emails" }] }] },
+      { results: [{ id: "v1.a", email: "a@alfa.com.br", jobTitle: { title: "Diretor" } }] },
+    );
+
+    const achados = await buscarNoDominio(
+      { dominio: "alfa.com.br", cargos: ["Diretor"], apiKey: "k" },
+      { fetch: fetchFalso },
+    );
+
+    expect(achados).toHaveLength(1);
+    // Busca + enriquecimento. Sem terceira chamada.
+    expect(chamadas).toHaveLength(2);
+    expect(achados[0]?.confianca).toBeGreaterThan(55);
+  });
+
+  it("sem cargo pedido, não repete a busca à toa", async () => {
+    const { fetchFalso, chamadas } = servidor({ results: [] });
+
+    await buscarNoDominio({ dominio: "alfa.com.br", apiKey: "k" }, { fetch: fetchFalso });
+
+    expect(chamadas).toHaveLength(1);
+  });
+});

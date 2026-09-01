@@ -383,9 +383,9 @@ export async function buscarNoDominio(
   // cadeia hoje não preenche senioridade; deixar o campo errado montado seria
   // um 400 esperando o primeiro alvo que a use.
 
-  let busca: unknown;
-  try {
-    busca = await postar<unknown>(
+  /** Monta e dispara uma busca, com ou sem filtro de cargo. */
+  const buscar = async (filtroDeContato: Record<string, unknown> | null) =>
+    postar<unknown>(
       "/contacts/prospecting",
       {
         // A página vai no mínimo aceito; quem limita o resultado é o
@@ -393,17 +393,48 @@ export async function buscarNoDominio(
         pagination: { page: 0, size: PAGINA_MINIMA },
         filters: {
           companies: { include: empresas },
-          ...(Object.keys(contatos).length ? { contacts: { include: contatos } } : {}),
+          ...(filtroDeContato ? { contacts: { include: filtroDeContato } } : {}),
         },
         options: { maxContactsPerCompany: POR_EMPRESA },
       },
       chamada,
     );
+
+  let busca: unknown;
+  try {
+    busca = await buscar(Object.keys(contatos).length ? contatos : null);
   } catch (erro) {
     return traduzirErro(erro);
   }
 
-  const encontrados = listaDeResultados(busca);
+  let encontrados = listaDeResultados(busca);
+
+  /**
+   * Vazio com filtro de cargo: tenta de novo SEM o filtro.
+   *
+   * "Nenhum contato" tem duas causas que a mesma resposta não distingue: a
+   * Lusha não tem ninguém desta empresa, ou tem e os cargos não casaram. A
+   * segunda é bem provável aqui — os cargos vêm em português ("Diretor de
+   * Operações") e o índice dela é majoritariamente em inglês.
+   *
+   * Sem esta segunda busca, as duas viram "vazio" e a conclusão errada é
+   * "a Lusha não cobre empresa brasileira". Custa uma chamada, e só quando a
+   * primeira não achou nada — que é exatamente quando a informação vale.
+   *
+   * O que voltar daqui não respeita o cargo-alvo, e é de propósito: quem
+   * revisa o lead vê o cargo real e decide. Melhor um contato com cargo
+   * diferente do pedido do que nenhum contato e nenhuma explicação.
+   */
+  let semFiltroDeCargo = false;
+  if (encontrados.length === 0 && Object.keys(contatos).length > 0) {
+    try {
+      encontrados = listaDeResultados(await buscar(null));
+      semFiltroDeCargo = encontrados.length > 0;
+    } catch (erro) {
+      return traduzirErro(erro);
+    }
+  }
+
   if (encontrados.length === 0) return [];
 
   /**
@@ -466,7 +497,15 @@ export async function buscarNoDominio(
 
   return lista
     .map((c) => paraCandidato(c, "lusha_domain"))
-    .filter((c): c is CandidatoDecisor => c !== null);
+    .filter((c): c is CandidatoDecisor => c !== null)
+    /**
+     * Contato achado sem o filtro de cargo entra com confiança menor.
+     *
+     * Ele é da empresa certa, mas não necessariamente o cargo pedido — a
+     * segunda busca não filtra. Marcar isso no número é o que permite
+     * distinguir, depois, "achamos o decisor" de "achamos alguém lá dentro".
+     */
+    .map((c) => (semFiltroDeCargo ? { ...c, confianca: Math.min(c.confianca, 55) } : c));
 }
 
 /**
