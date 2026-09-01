@@ -3,6 +3,7 @@ import type { Db } from "../db/port.js";
 import { tratarWebhookInstantly } from "./handlers/instantly-webhook.js";
 import { tratarWebhookCalcom } from "./handlers/calcom-webhook.js";
 import { tratarProcessarResposta } from "./handlers/processar-resposta.js";
+import { tratarEnviarLote } from "./handlers/enviar-lote.js";
 
 export interface DepsDoApp {
   db: Db;
@@ -45,6 +46,16 @@ export function criarApp(deps: DepsDoApp): Hono {
   // resposta. Nunca é chamada pelo webhook em si.
   app.post("/leads/:id/processar-resposta", (c) =>
     tratarProcessarResposta(c.req.raw, c.req.param("id"), {
+      db: deps.db,
+      tenantId: deps.tenantId,
+      segredo: deps.segredoN8n,
+    }),
+  );
+
+  // Rota lenta: dispara o disparo diário de uma campanha. O n8n agenda a
+  // chamada; ela nunca acontece sozinha.
+  app.post("/campaigns/:id/enviar-lote", (c) =>
+    tratarEnviarLote(c.req.raw, c.req.param("id"), {
       db: deps.db,
       tenantId: deps.tenantId,
       segredo: deps.segredoN8n,
