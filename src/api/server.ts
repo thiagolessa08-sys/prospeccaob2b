@@ -4,6 +4,7 @@ import { tratarWebhookInstantly } from "./handlers/instantly-webhook.js";
 import { tratarWebhookCalcom } from "./handlers/calcom-webhook.js";
 import { tratarProcessarResposta } from "./handlers/processar-resposta.js";
 import { tratarEnviarLote } from "./handlers/enviar-lote.js";
+import { tratarEnriquecerLote } from "./handlers/enriquecer-lote.js";
 
 export interface DepsDoApp {
   db: Db;
@@ -11,6 +12,7 @@ export interface DepsDoApp {
   segredoInstantly: string;
   segredoCalcom: string;
   segredoN8n: string;
+  apiKeyHunter: string;
 }
 
 /**
@@ -59,6 +61,16 @@ export function criarApp(deps: DepsDoApp): Hono {
       db: deps.db,
       tenantId: deps.tenantId,
       segredo: deps.segredoN8n,
+    }),
+  );
+
+  // Rota lenta: acha o decisor de cada empresa pendente. O n8n agenda.
+  app.post("/campaigns/:id/enriquecer-lote", (c) =>
+    tratarEnriquecerLote(c.req.raw, c.req.param("id"), {
+      db: deps.db,
+      tenantId: deps.tenantId,
+      segredo: deps.segredoN8n,
+      apiKeyHunter: deps.apiKeyHunter,
     }),
   );
 
