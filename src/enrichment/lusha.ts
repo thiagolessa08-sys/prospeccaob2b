@@ -173,7 +173,8 @@ function objetos(valor: unknown): Record<string, unknown>[] {
 function listaDeResultados(resposta: unknown): Record<string, unknown>[] {
   if (typeof resposta !== "object" || resposta === null) return [];
   const r = resposta as Record<string, unknown>;
-  for (const nome of ["data", "contacts", "results"]) {
+  // `results` é o nome documentado da V3. Os outros ficam por segurança.
+  for (const nome of ["results", "data", "contacts"]) {
     const lista = objetos(r[nome]);
     if (lista.length > 0) return lista;
   }
@@ -219,6 +220,25 @@ function empresaNoFiltro(input: {
   return null;
 }
 
+/**
+ * O cargo vem em objeto — `jobTitle: {title, departments, seniority}` —, não
+ * em texto.
+ *
+ * Eu lia como string e recebia `null` em todo contato: o lead nasceria sem
+ * cargo, e a coluna vazia na tela pareceria "a Lusha não tem esse dado" em
+ * vez de "eu li errado". Os nomes planos ficam como alternativa porque o
+ * enriquecimento pode devolver noutro formato.
+ */
+function cargoDe(bruto: Record<string, unknown>): string | null {
+  const aninhado = bruto.jobTitle;
+  if (typeof aninhado === "object" && aninhado !== null) {
+    const t = texto(aninhado as Record<string, unknown>, "title", "name");
+    if (t) return t;
+  }
+  return texto(bruto, "jobTitle", "job_title", "title", "position");
+}
+
+
 function paraCandidato(
   bruto: Record<string, unknown>,
   fonte: "lusha_finder" | "lusha_domain",
@@ -242,7 +262,7 @@ function paraCandidato(
 
   return {
     nome: inteiro ?? (partido || null),
-    cargo: texto(bruto, "jobTitle", "job_title", "title", "position"),
+    cargo: cargoDe(bruto),
     email,
     /**
      * 75 sintético quando a Lusha não dá score próprio: acima do 70 do e-mail
@@ -359,7 +379,9 @@ export async function buscarNoDominio(
 
   const contatos: Record<string, unknown> = {};
   if (titulos.length > 0) contatos.jobTitles = titulos;
-  if (input.senioridade) contatos.seniority = [input.senioridade];
+  // `seniorityIds` é o nome certo e ele quer NÚMEROS (`[4,5]`), não texto. A
+  // cadeia hoje não preenche senioridade; deixar o campo errado montado seria
+  // um 400 esperando o primeiro alvo que a use.
 
   let busca: unknown;
   try {
@@ -385,13 +407,33 @@ export async function buscarNoDominio(
   if (encontrados.length === 0) return [];
 
   /**
+   * Só enriquece quem a Lusha diz que TEM e-mail para revelar.
+   *
+   * A busca devolve `canReveal: [{field: "emails", credits: N}]` e `has`. O
+   * enriquecimento é a etapa que cobra por e-mail revelado — mandar um
+   * contato sem e-mail no acervo gasta a chamada e devolve nada.
+   *
+   * Quando a resposta não traz nenhum dos dois campos, o contato passa: a
+   * ausência do sinal não é um "não", e recusar por falta de informação
+   * transformaria um formato inesperado em "empresa sem decisor".
+   */
+  const comEmail = encontrados.filter((c) => {
+    const podeRevelar = objetos(c.canReveal).map((r) => texto(r, "field"));
+    const tem = Array.isArray(c.has)
+      ? c.has.filter((h): h is string => typeof h === "string")
+      : [];
+    if (podeRevelar.length === 0 && tem.length === 0) return true;
+    return podeRevelar.includes("emails") || tem.includes("emails");
+  });
+
+  /**
    * Corta em `POR_EMPRESA` antes de enriquecer.
    *
    * A busca precisa pedir a página mínima de 10, mas o enriquecimento é a
    * etapa que COBRA — por e-mail revelado. Mandar os dez ids que a página
    * trouxe pagaria dez revelações para usar uma.
    */
-  const ids = encontrados
+  const ids = comEmail
     .map((c) => texto(c, "id", "contactId"))
     .filter((id): id is string => id !== null)
     .slice(0, POR_EMPRESA);

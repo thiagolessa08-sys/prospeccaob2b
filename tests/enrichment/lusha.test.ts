@@ -351,3 +351,70 @@ describe("cota diária", () => {
     ).rejects.toThrow(/23 h/);
   });
 });
+
+describe("formatos reais da V3 nos contatos", () => {
+  it("lê o cargo de dentro de jobTitle, que é objeto", async () => {
+    // Eu lia como string e recebia null: o lead nasceria sem cargo, e a
+    // coluna vazia pareceria "a Lusha não tem" em vez de "eu li errado".
+    const { fetchFalso } = servidor(
+      { results: [{ id: "v1.x", canReveal: [{ field: "emails", credits: 1 }] }] },
+      {
+        results: [
+          {
+            id: "v1.x",
+            firstName: "Maria",
+            lastName: "Souza",
+            jobTitle: {
+              title: "Diretora Industrial",
+              departments: ["Operations"],
+              seniority: "Director",
+            },
+            emails: [{ address: "maria@alfa.com.br" }],
+          },
+        ],
+      },
+    );
+
+    const achados = await buscarNoDominio(
+      { dominio: "alfa.com.br", cargos: ["Diretor Industrial"], apiKey: "k" },
+      { fetch: fetchFalso },
+    );
+
+    expect(achados[0]?.cargo).toBe("Diretora Industrial");
+    expect(achados[0]?.nome).toBe("Maria Souza");
+  });
+
+  it("não enriquece contato que não tem e-mail para revelar", async () => {
+    // O enriquecimento cobra por e-mail revelado. Mandar quem não tem gasta a
+    // chamada e devolve nada.
+    const { fetchFalso, chamadas } = servidor({
+      results: [{ id: "v1.semEmail", canReveal: [{ field: "phones", credits: 1 }] }],
+    });
+
+    const achados = await buscarNoDominio(
+      { dominio: "alfa.com.br", apiKey: "k" },
+      { fetch: fetchFalso },
+    );
+
+    expect(achados).toEqual([]);
+    // Uma chamada só: a busca. O enrich nem foi tentado.
+    expect(chamadas).toHaveLength(1);
+  });
+
+  it("deixa passar quando a resposta não traz canReveal nem has", async () => {
+    // Ausência do sinal não é um "não". Recusar por falta de informação
+    // transformaria formato inesperado em "empresa sem decisor".
+    const { fetchFalso, chamadas } = servidor(
+      { results: [{ id: "v1.y" }] },
+      { results: [{ id: "v1.y", email: "alguem@alfa.com.br" }] },
+    );
+
+    const achados = await buscarNoDominio(
+      { dominio: "alfa.com.br", apiKey: "k" },
+      { fetch: fetchFalso },
+    );
+
+    expect(achados).toHaveLength(1);
+    expect(chamadas).toHaveLength(2);
+  });
+});

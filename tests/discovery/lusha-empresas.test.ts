@@ -42,13 +42,11 @@ describe("temFiltroDeEmpresaUtil", () => {
     expect(temFiltroDeEmpresaUtil(filtros({ ufs: ["SP"] }))).toBe(false);
   });
 
-  it("aceita setor ou tecnologia, e só", () => {
+  it("aceita setor, tecnologia ou porte", () => {
     expect(temFiltroDeEmpresaUtil(filtros({ setores: ["Food & Beverage"] }))).toBe(true);
     expect(temFiltroDeEmpresaUtil(filtros({ tecnologias: ["SAP"] }))).toBe(true);
-    // Porte NÃO conta: `sizes` saiu do payload até dar para ler os valores
-    // que a Lusha aceita, então aceitá-lo aqui deixaria passar uma busca que
-    // na prática não filtra nada.
-    expect(temFiltroDeEmpresaUtil(filtros({ min_employees: 300 }))).toBe(false);
+    // Porte volta a contar: `sizes` é `{min, max}` mesmo, confirmado na doc.
+    expect(temFiltroDeEmpresaUtil(filtros({ min_employees: 300 }))).toBe(true);
   });
 
   it("recusa os filtros da Receita, que a Lusha não entende", () => {
@@ -94,9 +92,9 @@ describe("pesquisarEmpresasNaLusha", () => {
     expect(incluir.industriesLabels).toBeUndefined();
     expect(incluir.industries).toBeUndefined();
     expect(incluir.technologies).toEqual(["SAP"]);
-    // `sizes` fora do payload por enquanto: é lista fechada na Lusha e o
-    // formato não foi confirmado. Mandar errado custaria um ciclo de deploy.
-    expect(incluir.sizes).toBeUndefined();
+    // `sizes` é `{min, max}`, confirmado na documentação de prospecting.
+
+    expect(incluir.sizes).toEqual([{ min: 300 }]);
     // Nada de CNAE: a Lusha não sabe o que é isso.
     expect(JSON.stringify(incluir)).not.toContain("cnae");
   });
@@ -289,5 +287,58 @@ describe("página mínima da API", () => {
     );
 
     expect(r.empresas).toHaveLength(1);
+  });
+});
+
+describe("leitura dos formatos reais da V3", () => {
+  it("lê employeeCount, que é objeto e não número", async () => {
+    // Eu lia como número e recebia null em toda empresa: a coluna de
+    // funcionários ficaria vazia na tela, parecendo dado que a Lusha não tem.
+    const { fetchFalso } = servidor({
+      results: [
+        {
+          id: "v1.c1",
+          name: "Alfa",
+          domain: "alfa.com.br",
+          employeeCount: { exact: 364, min: 201, max: 500 },
+        },
+      ],
+    });
+
+    const r = await pesquisarEmpresasNaLusha(
+      filtros({ tecnologias: ["SAP"] }),
+      { apiKey: "k" },
+      { fetch: fetchFalso },
+    );
+    expect(r.empresas[0]?.funcionarios).toBe(364);
+  });
+
+  it("cai para o mínimo da faixa quando não há exato", async () => {
+    const { fetchFalso } = servidor({
+      results: [
+        { id: "v1.c2", name: "Beta", employeeCount: { min: 201, max: 500 } },
+      ],
+    });
+
+    const r = await pesquisarEmpresasNaLusha(
+      filtros({ tecnologias: ["SAP"] }),
+      { apiKey: "k" },
+      { fetch: fetchFalso },
+    );
+    // Faixa é melhor que nada para julgar porte.
+    expect(r.empresas[0]?.funcionarios).toBe(201);
+  });
+
+  it("lê a lista em `results`, o nome documentado da V3", async () => {
+    const { fetchFalso } = servidor({
+      results: [{ id: "v1.c3", name: "Gama", domain: "gama.com.br" }],
+    });
+
+    const r = await pesquisarEmpresasNaLusha(
+      filtros({ tecnologias: ["SAP"] }),
+      { apiKey: "k" },
+      { fetch: fetchFalso },
+    );
+    expect(r.empresas[0]?.dominio).toBe("gama.com.br");
   });
 });

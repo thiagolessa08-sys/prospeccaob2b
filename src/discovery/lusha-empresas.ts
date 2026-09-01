@@ -139,7 +139,12 @@ export interface ResultadoDaBuscaDeEmpresas {
  * que, na prática, não filtra nada e consome a cota do dia para trazer lixo.
  */
 export function temFiltroDeEmpresaUtil(filtros: NicheFilters): boolean {
-  return filtros.setores.length > 0 || filtros.tecnologias.length > 0;
+  return (
+    filtros.setores.length > 0 ||
+    filtros.tecnologias.length > 0 ||
+    filtros.min_employees !== null ||
+    filtros.max_employees !== null
+  );
 }
 
 /**
@@ -176,30 +181,36 @@ function paraFiltros(filtros: NicheFilters): Record<string, unknown> {
     ? estados.map((estado) => ({ country: paises[0], state: estado }))
     : paises.map((pais) => ({ country: pais }));
 
-  /**
-   * O setor fica de fora até a Lusha dizer o nome do campo.
-   *
-   * Ela recusou `industries` e depois `industriesLabels`, os dois nomes que a
-   * documentação torna plausíveis — `industriesLabels` é o tipo de filtro no
-   * endpoint de descoberta, mas não é a propriedade do corpo. Continuar
-   * chutando custa um deploy por palpite.
-   *
-   * Sem ele a busca perde precisão, mas RODA — `locations` e `technologies`
-   * foram aceitos. E rodar é o que faz o resto do caminho (paginação, leitura
-   * da resposta, gravação com domínio) ser exercitado de uma vez, em vez de
-   * um erro por ciclo. O nome certo vem da lista que o 400 agora anexa.
-   */
   if (filtros.tecnologias.length > 0) incluir.technologies = filtros.tecnologias;
 
   /**
-   * Porte fica de fora por enquanto, de propósito.
+   * `sizes` é `{min, max}` mesmo — o formato que eu tinha adivinhado certo e
+   * removi por excesso de cautela depois de dois nomes de campo recusados.
+   */
+  if (filtros.min_employees !== null || filtros.max_employees !== null) {
+    const faixa: Record<string, number> = {};
+    if (filtros.min_employees !== null) faixa.min = filtros.min_employees;
+    if (filtros.max_employees !== null) faixa.max = filtros.max_employees;
+    incluir.sizes = [faixa];
+  }
+
+  /**
+   * O setor continua de fora, e agora sabemos por quê.
    *
-   * `sizes` é lista fechada na Lusha, alimentada por
-   * `/v3/companies/prospecting/filters/sizes` — provavelmente faixas prontas
-   * ("201-500"), não `{min, max}`. Mandar o formato errado custaria mais um
-   * ciclo de deploy para descobrir, e o porte é o critério menos decisivo do
-   * ICP: setor e tecnologia já restringem muito mais. Entra quando der para
-   * ler os valores aceitos.
+   * O campo é `mainIndustriesIds` e ele quer IDS, não rótulos — por isso
+   * `industries` e `industriesLabels` foram os dois recusados: o segundo é o
+   * nome do TIPO de filtro no endpoint de descoberta, não a propriedade do
+   * corpo.
+   *
+   * Mandar "Food & Beverage" ali não resolveria: seria texto onde a API
+   * espera número. Traduzir rótulo em id exige ler
+   * `/v3/companies/prospecting/filters/industriesLabels` e casar as duas
+   * listas — trabalho que só vale a pena depois que o caminho inteiro estiver
+   * provado, e que fica registrado aqui para não se perder.
+   *
+   * Enquanto isso, tecnologia + porte + localização já formam um ICP
+   * bastante restrito: "quem usa SAP ou TOTVS, com 300+ funcionários, no
+   * Brasil" não é uma busca larga.
    */
 
   return { companies: { include: incluir } };
@@ -231,7 +242,8 @@ function numero(obj: Record<string, unknown>, ...nomes: string[]): number | null
 function listaDeResultados(resposta: unknown): Record<string, unknown>[] {
   if (typeof resposta !== "object" || resposta === null) return [];
   const r = resposta as Record<string, unknown>;
-  for (const nome of ["data", "companies", "results"]) {
+  // `results` é o nome documentado da V3. Os outros ficam por segurança.
+  for (const nome of ["results", "data", "companies"]) {
     const lista = objetos(r[nome]);
     if (lista.length > 0) return lista;
   }
@@ -271,9 +283,26 @@ function paraEmpresa(bruto: Record<string, unknown>): EmpresaDaLusha | null {
     dominio: texto(bruto, "domain", "website", "companyDomain"),
     cidade: local.cidade,
     uf: local.uf,
-    funcionarios: numero(bruto, "employees", "employeesCount", "size"),
+    funcionarios: quantosFuncionarios(bruto),
     setor: texto(bruto, "industry", "mainIndustry"),
   };
+}
+
+/**
+ * `employeeCount` é objeto — `{exact, min, max}` —, não número.
+ *
+ * Eu lia como número e recebia `null` em toda empresa, o que apagaria a
+ * coluna de funcionários na tela sem erro nenhum: dado ausente disfarçado de
+ * dado inexistente. `exact` quando a Lusha sabe; `min` quando ela só dá a
+ * faixa, que é melhor que nada para julgar porte.
+ */
+function quantosFuncionarios(bruto: Record<string, unknown>): number | null {
+  const direto = numero(bruto, "employees", "employeesCount", "size");
+  if (direto !== null) return direto;
+
+  const contagem = bruto.employeeCount;
+  if (typeof contagem !== "object" || contagem === null) return null;
+  return numero(contagem as Record<string, unknown>, "exact", "min");
 }
 
 /**
