@@ -5,6 +5,7 @@ import {
   isSuppressed,
   assertSendable,
   ruleForOptOut,
+  ruleForBounce,
   type SuppressionRule,
 } from "../../src/domain/suppression.js";
 
@@ -102,5 +103,18 @@ describe("ruleForOptOut", () => {
       kind: "email",
       value: "pessoa@empresa.com",
     });
+  });
+});
+
+describe("ruleForBounce", () => {
+  it("gera regra de e-mail normalizada", () => {
+    expect(ruleForBounce(" Pessoa@Empresa.COM ")).toEqual({
+      kind: "email",
+      value: "pessoa@empresa.com",
+    });
+  });
+
+  it("lança para e-mail malformado, igual a ruleForOptOut", () => {
+    expect(() => ruleForBounce("nao-e-email")).toThrow(/inválido/i);
   });
 });

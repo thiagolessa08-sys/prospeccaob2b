@@ -62,3 +62,17 @@ export function assertSendable(
 export function ruleForOptOut(email: string): SuppressionRule {
   return { kind: "email", value: normalizeEmail(email) };
 }
+
+/**
+ * Um endereço que deu bounce definitivo não deve receber e-mail de novo, nem
+ * numa campanha futura — a checagem é por `tenant_id`, não por campanha. Hoje
+ * produz a mesma regra que `ruleForOptOut`; a função existe separada porque
+ * as duas nascem de decisões diferentes (o lead pediu para sair vs. o
+ * endereço provou não existir), e um motivo futuro para tratá-las diferente
+ * (por exemplo, permitir remover só a supressão de bounce depois de uma
+ * verificação manual) não deve exigir separar as duas depois de já
+ * misturadas nos logs.
+ */
+export function ruleForBounce(email: string): SuppressionRule {
+  return { kind: "email", value: normalizeEmail(email) };
+}

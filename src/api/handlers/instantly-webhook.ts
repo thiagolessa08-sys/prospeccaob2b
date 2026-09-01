@@ -8,7 +8,11 @@ import {
 import { anexarMensagem } from "../../db/repositories/messages.js";
 import { adicionarSupressao } from "../../db/repositories/suppression.js";
 import { registrarEvento } from "../../db/repositories/events.js";
-import { ruleForOptOut } from "../../domain/suppression.js";
+import {
+  ruleForOptOut,
+  ruleForBounce,
+  type SuppressionRule,
+} from "../../domain/suppression.js";
 import { canTransition } from "../../domain/stages.js";
 import type { Lead } from "../../db/types.js";
 
@@ -78,6 +82,13 @@ export async function tratarWebhookInstantly(
       return ok();
 
     case "email_bounced":
+      // Suprimido mesmo sem lead casado, e para qualquer campanha futura do
+      // tenant — não só descartado nesta: um endereço que provou não existir
+      // não deve ser tentado de novo só porque outra empresa aparece com o
+      // mesmo e-mail (gerais como contato@ se repetem entre CNPJs).
+      if (email) {
+        await suprimirComSeguranca(deps, ruleForBounce, email, "endereço deu bounce");
+      }
       if (lead) {
         await marcarBounce(deps.db, deps.tenantId, lead.id);
         await descartar(deps, lead, "endereço deu bounce");
@@ -90,12 +101,7 @@ export async function tratarWebhookInstantly(
       // A supressão é gravada mesmo sem lead casado: alguém pediu para sair, e
       // não achar o registro dele aqui não torna o pedido menos válido.
       if (email) {
-        await adicionarSupressao(
-          deps.db,
-          deps.tenantId,
-          ruleForOptOut(email),
-          "descadastro pelo Instantly",
-        );
+        await suprimirComSeguranca(deps, ruleForOptOut, email, "descadastro pelo Instantly");
       }
       if (lead) await descartar(deps, lead, "pedido de descadastro");
       return ok();
@@ -161,6 +167,36 @@ async function descartar(
   if (canTransition(lead.stage, "discarded")) {
     await transicionarLead(deps.db, deps.tenantId, lead.id, "discarded", {
       discardReason: motivo,
+    });
+  }
+}
+
+/**
+ * `ruleForOptOut`/`ruleForBounce` normalizam o e-mail e lançam para um valor
+ * malformado — correto dentro do domínio, mas o corpo do webhook vem de
+ * fora, sem nenhuma validação prévia. Sem este envoltório, um `lead_email`
+ * malformado faria a supressão lançar direto de dentro do handler e devolver
+ * 5xx ao Instantly, que reentregaria o mesmo webhook para sempre — exatamente
+ * o que o comentário no topo deste arquivo diz que nunca deve acontecer.
+ */
+async function suprimirComSeguranca(
+  deps: DepsInstantly,
+  regra: (email: string) => SuppressionRule,
+  email: string,
+  motivo: string,
+): Promise<void> {
+  try {
+    await adicionarSupressao(deps.db, deps.tenantId, regra(email), motivo);
+  } catch (erro) {
+    await registrarEvento(deps.db, {
+      tenantId: deps.tenantId,
+      leadId: null,
+      kind: "webhook_email_invalido",
+      payload: {
+        email,
+        motivo,
+        erro: erro instanceof Error ? erro.message : String(erro),
+      },
     });
   }
 }

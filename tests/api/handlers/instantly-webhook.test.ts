@@ -206,7 +206,7 @@ describe("reply_received", () => {
 });
 
 describe("email_bounced", () => {
-  it("marca o bounce e descarta o lead", async () => {
+  it("marca o bounce, descarta o lead e suprime o endereço para o futuro", async () => {
     const lead = await leadContatado("quebrou@exemplo.com");
     const res = await tratarWebhookInstantly(
       requisicao({
@@ -223,6 +223,51 @@ describe("email_bounced", () => {
     expect(relido?.bounced_at).toBeInstanceOf(Date);
     expect(relido?.stage).toBe("discarded");
     expect(relido?.discard_reason).toMatch(/bounce/i);
+
+    // A supressão vale para qualquer campanha futura, não só para descartar
+    // este lead — é o que impede um endereço já provado inválido de ser
+    // tentado de novo se outra empresa aparecer com o mesmo e-mail.
+    const regras = await carregarRegrasDeSupressao(banco.db, banco.tenantId);
+    expect(regras).toContainEqual({ kind: "email", value: "quebrou@exemplo.com" });
+  });
+
+  it("suprime mesmo sem lead casado", async () => {
+    const res = await tratarWebhookInstantly(
+      requisicao({
+        event_type: "email_bounced",
+        lead_email: "fantasma-bounce@exemplo.com",
+        campaign_id: "camp",
+        email_id: "evt_bounce_fantasma",
+      }),
+      deps(),
+    );
+    expect(res.status).toBe(200);
+
+    const regras = await carregarRegrasDeSupressao(banco.db, banco.tenantId);
+    expect(regras).toContainEqual({
+      kind: "email",
+      value: "fantasma-bounce@exemplo.com",
+    });
+  });
+
+  it("nunca devolve 5xx para lead_email malformado, mesmo sem conseguir suprimir", async () => {
+    const res = await tratarWebhookInstantly(
+      requisicao({
+        event_type: "email_bounced",
+        lead_email: "isto-nao-e-email",
+        campaign_id: "camp",
+        email_id: "evt_bounce_malformado",
+      }),
+      deps(),
+    );
+    expect(res.status).toBe(200);
+
+    const { rows } = await banco.db.query<{ kind: string }>(
+      `select kind from events where tenant_id = $1 and kind = 'webhook_email_invalido'
+       order by created_at desc limit 1`,
+      [banco.tenantId],
+    );
+    expect(rows[0]?.kind).toBe("webhook_email_invalido");
   });
 });
 
@@ -264,6 +309,26 @@ describe("lead_unsubscribed", () => {
       kind: "email",
       value: "fantasma@exemplo.com",
     });
+  });
+
+  it("nunca devolve 5xx para lead_email malformado", async () => {
+    const res = await tratarWebhookInstantly(
+      requisicao({
+        event_type: "lead_unsubscribed",
+        lead_email: "isto-nao-e-email",
+        campaign_id: "camp",
+        email_id: "evt_unsub_malformado",
+      }),
+      deps(),
+    );
+    expect(res.status).toBe(200);
+
+    const { rows } = await banco.db.query<{ kind: string }>(
+      `select kind from events where tenant_id = $1 and kind = 'webhook_email_invalido'
+       order by created_at desc limit 1`,
+      [banco.tenantId],
+    );
+    expect(rows[0]?.kind).toBe("webhook_email_invalido");
   });
 });
 
