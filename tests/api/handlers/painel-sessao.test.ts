@@ -26,6 +26,7 @@ function app(senhaDoPainel = SENHA) {
     senhaDoPainel,
     apiKeyHunter: "chave-hunter",
     apiKeyLusha: "",
+    loteDeDescoberta: 300,
     loteDeEnriquecimento: 20,
     apiKeyCasaDosDados: "chave-casa-dos-dados",
   });

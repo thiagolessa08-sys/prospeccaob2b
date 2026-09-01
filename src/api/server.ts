@@ -46,6 +46,8 @@ export interface DepsDoApp {
   apiKeyLusha: string;
   /** Quantas empresas o lote de enriquecimento processa por vez. */
   loteDeEnriquecimento: number;
+  /** Quantas empresas a descoberta traz por vez. */
+  loteDeDescoberta: number;
   apiKeyCasaDosDados: string;
 }
 
@@ -249,6 +251,7 @@ export function criarApp(deps: DepsDoApp): Hono {
       tenantId: deps.tenantId,
       segredo: deps.segredoN8n,
       apiKeyCasaDosDados: deps.apiKeyCasaDosDados,
+      loteDeDescoberta: deps.loteDeDescoberta,
       apiKeyLusha: deps.apiKeyLusha,
     }),
   );

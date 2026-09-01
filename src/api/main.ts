@@ -15,6 +15,7 @@ const app = criarApp({
   apiKeyHunter: ambiente.HUNTER_API_KEY,
   apiKeyLusha: ambiente.LUSHA_API_KEY,
   loteDeEnriquecimento: ambiente.LOTE_DE_ENRIQUECIMENTO,
+  loteDeDescoberta: ambiente.LOTE_DE_DESCOBERTA,
   apiKeyCasaDosDados: ambiente.CASA_DOS_DADOS_API_KEY,
 });
 

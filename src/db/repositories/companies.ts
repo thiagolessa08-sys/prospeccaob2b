@@ -104,6 +104,18 @@ export async function salvarEmpresas(
   };
 }
 
+/**
+ * As empresas ainda não enriquecidas, com domínio na frente.
+ *
+ * A ordem não é detalhe. Era `created_at` crescente — as mais antigas
+ * primeiro —, e isso significa que uma base com empresas da Casa dos Dados
+ * (sem domínio, porque a busca da Receita não devolve site) e da Lusha (com
+ * domínio) gastaria a cota do dia nas primeiras, que são justamente as que a
+ * busca de contato não tem como resolver.
+ *
+ * `website is null` ordena falso antes de verdadeiro: quem tem domínio vai
+ * primeiro. Depois, as mais recentes — que são as da fonte em uso agora.
+ */
 export async function listarPendentesDeEnriquecimento(
   db: Db,
   tenantId: string,
@@ -113,7 +125,7 @@ export async function listarPendentesDeEnriquecimento(
   const { rows } = await db.query<Company>(
     `select ${COLUNAS} from companies
      where tenant_id = $1 and campaign_id = $2 and enrichment_status = 'pending'
-     order by created_at
+     order by (website is null), created_at desc
      limit $3`,
     [tenantId, campaignId, limite],
   );

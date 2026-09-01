@@ -9,6 +9,8 @@ export interface DepsDescobrirEmpresasHttp {
   segredo: string;
   apiKeyCasaDosDados: string;
   apiKeyLusha: string;
+  /** Quantas empresas trazer por chamada. */
+  loteDeDescoberta: number;
 }
 
 /**
@@ -31,6 +33,7 @@ export async function tratarDescobrirEmpresas(
     campaignId,
     apiKey: deps.apiKeyCasaDosDados,
     apiKeyLusha: deps.apiKeyLusha,
+    maxEmpresas: deps.loteDeDescoberta,
   });
 
   return new Response(JSON.stringify(resultado), { status: 200 });

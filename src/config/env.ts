@@ -84,6 +84,18 @@ const EnvSchema = z.object({
    * exigir mudança de código para isso.
    */
   LOTE_DE_ENRIQUECIMENTO: z.coerce.number().int().positive().optional().default(1),
+  /**
+   * Quantas empresas o botão Descobrir empresas traz por vez.
+   *
+   * UMA por padrão, na fase de teste — pelo mesmo motivo do lote de
+   * enriquecimento. O teto era 300 fixo, e uma busca trouxe 300 empresas
+   * quando a pergunta a responder era "o caminho funciona para UMA?".
+   *
+   * Baratear não é o ponto aqui (a busca é paginada e 300 custam ~6
+   * chamadas): o ponto é não encher a base de empresas antes de saber se
+   * elas servem.
+   */
+  LOTE_DE_DESCOBERTA: z.coerce.number().int().positive().optional().default(1),
 });
 
 export type Env = z.infer<typeof EnvSchema>;

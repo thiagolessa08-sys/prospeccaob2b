@@ -234,7 +234,8 @@ async function descobrirNaLusha(
     try {
       lote = await pesquisarEmpresasNaLusha(
         filtros,
-        { apiKey, pagina, limite: PAGINA_DA_LUSHA },
+        // A página acompanha o teto: pedir 1 empresa não pode trazer 50.
+        { apiKey, pagina, limite: Math.min(PAGINA_DA_LUSHA, maxEmpresas) },
         deps,
       );
     } catch (erro) {
@@ -283,7 +284,7 @@ async function descobrirNaLusha(
     salvas += resultado.inseridas;
     ignoradas += resultado.ignoradas;
 
-    if (lote.empresas.length < PAGINA_DA_LUSHA) break;
+    if (lote.empresas.length < Math.min(PAGINA_DA_LUSHA, maxEmpresas)) break;
     pagina += 1;
   }
 

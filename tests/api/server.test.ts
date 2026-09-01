@@ -28,6 +28,7 @@ function app() {
     senhaDoPainel: "senha-do-painel",
     apiKeyHunter: "chave-hunter",
     apiKeyLusha: "",
+    loteDeDescoberta: 300,
     loteDeEnriquecimento: 20,
     apiKeyCasaDosDados: "chave-casa-dos-dados",
   });
@@ -130,6 +131,7 @@ describe("erros não tratados", () => {
         senhaDoPainel: "senha-do-painel",
         apiKeyHunter: "chave-hunter",
         apiKeyLusha: "",
+        loteDeDescoberta: 300,
         loteDeEnriquecimento: 20,
         apiKeyCasaDosDados: "chave-casa-dos-dados",
       });
