@@ -22,27 +22,9 @@
 import pg from "pg";
 import { readFileSync } from "node:fs";
 import { CAMINHO_DA_MIGRATION } from "./caminho-migration.js";
+import { semSegredos } from "../config/redigir.js";
 
 const MIGRATION = CAMINHO_DA_MIGRATION;
-
-/**
- * Nunca deixe a connection string chegar a um log: ela carrega a senha do
- * banco em texto claro. O primeiro deploy no Railway imprimiu a senha do
- * Postgres onze vezes nos logs, porque o erro do `pg` embute a string inteira
- * na mensagem — mesma disciplina que `urlSegura` em src/http/fetch-json.ts já
- * aplica às chaves de API.
- */
-function semSegredo(texto: string, url: string): string {
-  let limpo = texto.split(url).join("[DATABASE_URL]");
-  try {
-    const senha = new URL(url).password;
-    if (senha) limpo = limpo.split(senha).join("***");
-  } catch {
-    // URL malformada não tem senha isolável; o split acima já cobriu o caso
-    // de a string inteira aparecer na mensagem.
-  }
-  return limpo;
-}
 
 const url = process.env.DATABASE_URL?.trim();
 if (!url) {
@@ -119,7 +101,7 @@ try {
   console.log(`Tabelas: ${tabelas.map((t) => t.nome).join(", ")}`);
 } catch (erro) {
   const bruto = erro instanceof Error ? erro.message : String(erro);
-  console.error(`Falhou: ${semSegredo(bruto, url)}`);
+  console.error(`Falhou: ${semSegredos(bruto)}`);
   process.exit(1);
 } finally {
   await cliente.end();

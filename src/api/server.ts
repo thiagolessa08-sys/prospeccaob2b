@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import type { Db } from "../db/port.js";
+import { semSegredos } from "../config/redigir.js";
 import { tratarWebhookInstantly } from "./handlers/instantly-webhook.js";
 import { tratarWebhookCalcom } from "./handlers/calcom-webhook.js";
 import { tratarProcessarResposta } from "./handlers/processar-resposta.js";
@@ -31,6 +32,25 @@ export interface DepsDoApp {
  */
 export function criarApp(deps: DepsDoApp): Hono {
   const app = new Hono();
+
+  /**
+   * Sem isto, qualquer exceção não tratada vira um "Internal Server Error"
+   * mudo: o cliente não sabe o que houve e o log do servidor também não —
+   * o Hono não imprime nada por padrão. Aconteceu em produção, e a única
+   * saída foi adivinhar a causa de fora.
+   *
+   * O corpo da resposta segue genérico de propósito (a mensagem de erro pode
+   * carregar nome de tabela, SQL, caminho de arquivo), mas o log do servidor
+   * recebe o motivo real — passado por `semSegredos`, porque erro de driver
+   * costuma embutir a credencial que causou a falha.
+   */
+  app.onError((erro, c) => {
+    const detalhe = erro instanceof Error ? (erro.stack ?? erro.message) : String(erro);
+    console.error(
+      `[500] ${c.req.method} ${c.req.path}\n${semSegredos(detalhe)}`,
+    );
+    return c.json({ erro: "erro interno" }, 500);
+  });
 
   // A raiz existe só para não parecer deploy quebrado: um 404 nu em `/` é
   // indistinguível de "serviço não subiu" para quem abre a URL no navegador.

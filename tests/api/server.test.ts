@@ -103,3 +103,42 @@ describe("rotas", () => {
     expect((await app().request("/webhooks/instantly")).status).toBe(404);
   });
 });
+
+describe("erros não tratados", () => {
+  it("loga a causa real e devolve 500 genérico ao cliente", async () => {
+    // Um banco que estoura em qualquer consulta reproduz o que aconteceu em
+    // produção: rota autenticada, query falha, cliente recebe 500 mudo.
+    const bancoQuebrado = {
+      query: async () => {
+        throw new Error('relation "campaigns" does not exist');
+      },
+    };
+    const erros: string[] = [];
+    const original = console.error;
+    console.error = (msg: unknown) => erros.push(String(msg));
+
+    try {
+      const appQuebrado = criarApp({
+        db: bancoQuebrado as never,
+        tenantId: banco.tenantId,
+        segredoInstantly: SEGREDO_INSTANTLY,
+        segredoCalcom: SEGREDO_CALCOM,
+        segredoN8n: "segredo-n8n",
+        apiKeyHunter: "chave-hunter",
+        apiKeyCasaDosDados: "chave-casa-dos-dados",
+      });
+      const res = await appQuebrado.request("/campaigns/ativas", {
+        headers: { "x-prospeccao-segredo": "segredo-n8n" },
+      });
+
+      expect(res.status).toBe(500);
+      // O cliente não recebe detalhe interno...
+      expect(await res.json()).toEqual({ erro: "erro interno" });
+      // ...mas o log do servidor recebe, senão não há como depurar.
+      expect(erros.join("\n")).toContain('relation "campaigns" does not exist');
+      expect(erros.join("\n")).toContain("/campaigns/ativas");
+    } finally {
+      console.error = original;
+    }
+  });
+});
