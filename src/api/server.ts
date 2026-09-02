@@ -122,7 +122,32 @@ export function criarApp(deps: DepsDoApp): Hono {
     console.error(
       `[500] ${c.req.method} ${c.req.path}\n${semSegredos(detalhe)}`,
     );
-    return c.json({ erro: "erro interno" }, 500);
+
+    /**
+     * O operador logado vê a causa; o resto do mundo continua vendo genérico.
+     *
+     * O corpo era opaco para todos, e por um motivo real: mensagem de erro
+     * carrega nome de tabela, SQL e caminho de arquivo, e estas rotas estão
+     * abertas na internet. Mas isso obrigava a abrir o log do Railway a cada
+     * 500 — e quem está com sessão válida do painel é o dono do sistema, que
+     * já pode ver tudo pelas outras telas.
+     *
+     * Vai só `message`, nunca o stack: o stack expõe a estrutura de arquivos
+     * e não ajuda a decidir nada. E passa por `semSegredos` de qualquer
+     * forma, porque erro de driver costuma ecoar a credencial que causou a
+     * falha.
+     */
+    const doOperador = sessaoConfere(
+      c.req.raw.headers.get("cookie"),
+      deps.senhaDoPainel,
+    );
+    if (!doOperador) return c.json({ erro: "erro interno" }, 500);
+
+    const mensagem = erro instanceof Error ? erro.message : String(erro);
+    return c.json(
+      { erro: "erro interno", detalhe: semSegredos(mensagem) },
+      500,
+    );
   });
 
   // A raiz existe só para não parecer deploy quebrado: um 404 nu em `/` é

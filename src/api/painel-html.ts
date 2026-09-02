@@ -232,7 +232,16 @@ async function api(caminho, opcoes) {
   var texto = await res.text();
   var corpo;
   try { corpo = JSON.parse(texto); } catch (e) { corpo = texto; }
-  if (!res.ok) throw new Error(typeof corpo === "string" ? corpo : JSON.stringify(corpo));
+
+  if (!res.ok) {
+    // `detalhe` é a causa real, que o servidor só manda para quem tem sessão.
+    // Antes disso, todo 500 chegava aqui como {"erro":"erro interno"} e a
+    // resposta estava no log do Railway.
+    if (corpo && typeof corpo === "object" && corpo.detalhe) {
+      throw new Error(corpo.detalhe);
+    }
+    throw new Error(typeof corpo === "string" ? corpo : JSON.stringify(corpo));
+  }
   return corpo;
 }
 

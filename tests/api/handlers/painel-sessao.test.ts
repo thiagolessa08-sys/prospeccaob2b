@@ -167,3 +167,80 @@ describe("a sessão autoriza as rotas de lote, que a tela dispara", () => {
     expect(res.status).toBe(401);
   });
 });
+
+describe("erro interno", () => {
+  it("mostra a causa para quem tem sessão do painel", async () => {
+    // Antes o corpo era opaco para todos, e a causa só existia no log do
+    // Railway — o que obrigava a sair do painel a cada 500.
+    const quebrado = {
+      query: async () => {
+        throw new Error("relation companies_x does not exist");
+      },
+    };
+    const app = criarApp({
+      db: quebrado as never,
+      tenantId: banco.tenantId,
+      segredoInstantly: "i",
+      segredoCalcom: "c",
+      segredoN8n: SEGREDO_N8N,
+      senhaDoPainel: SENHA,
+      apiKeyHunter: "h",
+      apiKeyLusha: "",
+      apiKeyCasaDosDados: "c",
+      loteDeEnriquecimento: 1,
+      loteDeDescoberta: 1,
+    });
+
+    const cookie = await entrar();
+    const erros: string[] = [];
+    const original = console.error;
+    console.error = (m: unknown) => erros.push(String(m));
+    try {
+      const res = await app.request("/painel/campanhas", { headers: { cookie } });
+      expect(res.status).toBe(500);
+      const corpo = (await res.json()) as { erro: string; detalhe?: string };
+      expect(corpo.detalhe).toContain("companies_x");
+    } finally {
+      console.error = original;
+    }
+  });
+
+  it("continua opaco para quem não tem sessão", async () => {
+    // As rotas estão abertas na internet, e mensagem de erro carrega nome de
+    // tabela, SQL e caminho de arquivo.
+    const quebrado = {
+      query: async () => {
+        throw new Error("relation companies_x does not exist");
+      },
+    };
+    const app = criarApp({
+      db: quebrado as never,
+      tenantId: banco.tenantId,
+      segredoInstantly: "i",
+      segredoCalcom: "c",
+      segredoN8n: SEGREDO_N8N,
+      senhaDoPainel: SENHA,
+      apiKeyHunter: "h",
+      apiKeyLusha: "",
+      apiKeyCasaDosDados: "c",
+      loteDeEnriquecimento: 1,
+      loteDeDescoberta: 1,
+    });
+
+    const erros: string[] = [];
+    const original = console.error;
+    console.error = (m: unknown) => erros.push(String(m));
+    try {
+      const res = await app.request("/painel/campanhas", {
+        headers: { "x-prospeccao-segredo": SEGREDO_N8N },
+      });
+      expect(res.status).toBe(500);
+      const corpo = (await res.json()) as { erro: string; detalhe?: string };
+      expect(corpo.detalhe).toBeUndefined();
+      // Mas o log do servidor recebe tudo, inclusive o stack.
+      expect(erros.join("\n")).toContain("companies_x");
+    } finally {
+      console.error = original;
+    }
+  });
+});
