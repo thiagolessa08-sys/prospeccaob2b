@@ -223,7 +223,7 @@ export async function listarEmpresasDaCampanha(
   limite: number,
 ): Promise<EmpresaDoPainel[]> {
   const { rows } = await db.query<EmpresaDoPainel>(
-    `select c.id, c.tenant_id, c.campaign_id, c.cnpj, c.legal_name,
+    `select c.id, c.tenant_id, c.campaign_id, c.cnpj, c.external_id, c.legal_name,
             c.trade_name, c.website, c.city, c.uf, c.employee_count,
             c.summary, c.source, c.enrichment_status, c.created_at,
             e.payload as ultima_tentativa,

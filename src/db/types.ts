@@ -50,6 +50,15 @@ export interface Company {
   tenant_id: string;
   campaign_id: string;
   cnpj: string | null;
+  /**
+   * O id da empresa no fornecedor de origem — hoje, o company id da Lusha.
+   *
+   * Nulo para empresa vinda da Receita, que se identifica por CNPJ. É este
+   * campo que permite pedir os contatos DAQUELA empresa por id, em vez de
+   * procurá-la de novo por domínio ou nome — o passo onde Receita e Lusha
+   * falhavam em se casar.
+   */
+  external_id: string | null;
   legal_name: string;
   trade_name: string | null;
   website: string | null;

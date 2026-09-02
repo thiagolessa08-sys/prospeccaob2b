@@ -371,3 +371,97 @@ describe("tratarEmpresasDaCampanha", () => {
     expect(await res.json()).toEqual([]);
   });
 });
+
+describe("campos que o tipo promete e a consulta precisa trazer", () => {
+  it("devolve external_id da empresa vinda de fornecedor", async () => {
+    /**
+     * Guarda para uma classe de erro que já apareceu duas vezes: a coluna
+     * existe na migration, o tipo declara o campo, e a consulta não o
+     * seleciona. O valor chega `undefined` sem erro nenhum, e o código que
+     * depende dele simplesmente não funciona — foi o que fez a busca de
+     * contato por id da empresa não sair do lugar.
+     */
+    const { salvarEmpresasExternas } = await import(
+      "../../../src/db/repositories/companies.js"
+    );
+    const campanha = await criarCampanha(banco.db, {
+      tenantId: banco.tenantId,
+      name: "Com external_id",
+      nicheDescription: "indústrias",
+      offerDescription: "BI",
+      schedulingLink: "https://cal.com/t/30min",
+      senderFirstName: "Thiago",
+    });
+
+    await salvarEmpresasExternas(banco.db, [
+      {
+        tenantId: banco.tenantId,
+        campaignId: campanha.id,
+        externalId: "v1.company.teste",
+        legalName: "Alfa Alimentos",
+        website: "alfa.com.br",
+        city: "Joinville",
+        uf: "SC",
+        employeeCount: 450,
+        summary: "Food & Beverage",
+        source: "lusha",
+      },
+    ]);
+
+    const res = await tratarEmpresasDaCampanha(
+      comSegredo("/painel/campanhas/" + campanha.id + "/empresas"),
+      campanha.id,
+      deps(),
+    );
+    const corpo = (await res.json()) as Array<{
+      external_id: string | null;
+      website: string | null;
+      cnpj: string | null;
+    }>;
+
+    expect(corpo[0]?.external_id).toBe("v1.company.teste");
+    // O domínio é o que faz a busca de contato funcionar; sem CNPJ, é o que
+    // resta junto do id.
+    expect(corpo[0]?.website).toBe("alfa.com.br");
+    expect(corpo[0]?.cnpj).toBeNull();
+  });
+
+  it("a fila de enriquecimento também traz o external_id", async () => {
+    // É de `listarPendentesDeEnriquecimento` que o lote lê o id para mandar à
+    // Lusha. Se a consulta não trouxer, a busca por id nunca acontece.
+    const { salvarEmpresasExternas, listarPendentesDeEnriquecimento } = await import(
+      "../../../src/db/repositories/companies.js"
+    );
+    const campanha = await criarCampanha(banco.db, {
+      tenantId: banco.tenantId,
+      name: "Fila com external_id",
+      nicheDescription: "indústrias",
+      offerDescription: "BI",
+      schedulingLink: "https://cal.com/t/30min",
+      senderFirstName: "Thiago",
+    });
+
+    await salvarEmpresasExternas(banco.db, [
+      {
+        tenantId: banco.tenantId,
+        campaignId: campanha.id,
+        externalId: "v1.company.fila",
+        legalName: "Beta",
+        website: "beta.com.br",
+        city: null,
+        uf: null,
+        employeeCount: null,
+        summary: null,
+        source: "lusha",
+      },
+    ]);
+
+    const pendentes = await listarPendentesDeEnriquecimento(
+      banco.db,
+      banco.tenantId,
+      campanha.id,
+      10,
+    );
+    expect(pendentes[0]?.external_id).toBe("v1.company.fila");
+  });
+});
