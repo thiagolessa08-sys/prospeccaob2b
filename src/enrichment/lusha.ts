@@ -187,15 +187,6 @@ function formaRecebida(resposta: unknown): string {
 }
 
 /**
- * Do que a Lusha diz sobre o e-mail para o nosso vocabulário.
- *
- * Sem sinal reconhecível, `accept_all` — que na cadeia significa
- * "indeterminado, não reprovado", e é exatamente o que sabemos: a Lusha
- * entregou o endereço, não afirmou que ele é válido. Marcar `valid` seria
- * afirmar por ela; marcar `invalid` descartaria contato bom. O disjuntor de
- * bounce existe justamente para o que passar daqui e não entregar.
- */
-/**
  * O status que a Lusha afirma, quando afirma. `null` quando não há sinal.
  *
  * Devolve `null` em vez de `accept_all` de propósito: quem chama precisa
@@ -293,25 +284,22 @@ function escolherEmail(
  * verificado — então um lead que chega como `accept_all` fica enriquecido e
  * parado para sempre, porque nada o reverifica depois.
  *
- * A nota da Lusha é justamente a confiança dela no endereço, e estava sendo
- * ignorada: todo lead virava `accept_all` e o funil parava calado no envio.
- * A+ e A são afirmação de qualidade — valem `valid`. B para baixo é
- * indeterminação, e indeterminado espera: é o endereço com maior chance de
- * voltar como bounce, e o disjuntor existe justamente porque bounce custa
- * reputação de domínio.
+ * E nada reverifica MESMO: a Lusha não tem endpoint de verificação de
+ * e-mail, e a da Hunter exige a chave dela. Não existe segunda opinião a
+ * buscar. Ou se confia no que a Lusha entregou, ou o lead nunca sai.
+ *
+ * Por isso qualquer nota vale `valid`: A+ e B são graus de confiança DELA
+ * sobre um endereço que ela afirma existir, não um veredito de entrega. O
+ * grau continua vivo em `confianca`, que ordena os candidatos — perde-se a
+ * trava, não a informação.
+ *
+ * O que resta protegendo a reputação do domínio, e não é pouco: o modo
+ * sombra, que ensaia sem enviar, e o disjuntor de bounce, que pausa a
+ * campanha sozinho acima de 3%. A trava de e-mail verificado era a terceira
+ * camada, e é a única que não sobrevive a um fornecedor que não verifica.
  */
 function verificacaoDaNota(nota: string | null): StatusVerificacao | null {
-  switch (nota?.toUpperCase()) {
-    case "A+":
-    case "A":
-      return "valid";
-    case "B":
-    case "C":
-    case "D":
-      return "accept_all";
-    default:
-      return null;
-  }
+  return nota ? "valid" : null;
 }
 
 /**
@@ -368,18 +356,23 @@ function paraCandidato(
       numero(bruto, "confidence", "score", "emailConfidence") ??
       75,
     /**
-     * O status explícito quando vem; senão, a nota do e-mail.
+     * O status explícito quando vem; senão a nota; senão, confia.
      *
-     * A ordem importa: um campo de status é afirmação direta da Lusha, e a
-     * nota é a confiança dela. Só quando nenhum dos dois existe é que cai em
-     * `accept_all` — indeterminado, que não sai da fila de envio.
+     * O último degrau é `valid`, e não `accept_all`, porque a Lusha ter
+     * devolvido um endereço já é a afirmação dela de que ele existe — e não
+     * há segunda opinião a buscar, já que nem ela nem nós temos verificador.
+     * Cair em `accept_all` aqui deixaria o lead enriquecido e parado para
+     * sempre, que é pior do que enviar: parado, ele não vira nem reunião nem
+     * aprendizado.
+     *
+     * `invalid` continua sendo respeitado quando ela afirma.
      */
     verificacao:
       traduzirStatusExplicito(
         bruto.emailStatus ?? bruto.email_status ?? bruto.isValid ?? bruto.status,
       ) ??
       verificacaoDaNota(escolhido.nota) ??
-      "accept_all",
+      "valid",
     fonte,
   };
 }

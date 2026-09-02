@@ -20,6 +20,7 @@ import {
   tratarDetalheDoLead,
   tratarEmpresasDaCampanha,
   tratarEventosDaCampanha,
+  tratarVerificarEmailDoLead,
 } from "./handlers/painel.js";
 import {
   tratarProporCampanha,
@@ -345,6 +346,21 @@ export function criarApp(deps: DepsDoApp): Hono {
 
   app.get("/painel/leads/:id", async (c) =>
     tratarDetalheDoLead(await comoOperador(c.req.raw, deps), c.req.param("id"), {
+      db: deps.db,
+      tenantId: deps.tenantId,
+      segredo: deps.segredoN8n,
+      provedorDeEnriquecimento: provedorEmUso,
+    }),
+  );
+
+  /**
+   * Destrava um lead cujo e-mail o fornecedor não afirmou ser válido.
+   *
+   * POST, e não GET, porque muda estado — e sobrepõe uma trava de segurança,
+   * que é a razão de o evento ser gravado sempre.
+   */
+  app.post("/painel/leads/:id/verificar-email", async (c) =>
+    tratarVerificarEmailDoLead(await comoOperador(c.req.raw, deps), c.req.param("id"), {
       db: deps.db,
       tenantId: deps.tenantId,
       segredo: deps.segredoN8n,

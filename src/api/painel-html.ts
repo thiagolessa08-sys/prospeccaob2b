@@ -685,6 +685,30 @@ async function verLeads(id) {
   alvo.innerHTML = html + "</tbody></table></div>";
 }
 
+/** Destrava um lead parado por e-mail não verificado. */
+async function verificarEmail(botao, id) {
+  botao.disabled = true;
+  try {
+    var r = await api("/painel/leads/" + id + "/verificar-email", { method: "POST" });
+    // Recarrega o detalhe: o botão some e a etiqueta de verificado aparece.
+    await verLead(id);
+    await carregar();
+    if (r && r.motivo) {
+      var msg = document.createElement("p");
+      msg.className = "vazio";
+      msg.textContent = r.motivo;
+      $("detalhe-corpo").prepend(msg);
+    }
+  } catch (e) {
+    if (e.message !== "401") {
+      var alvo = $("detalhe-corpo");
+      if (alvo) alvo.innerHTML = '<p class="aviso">' + esc(e.message) + "</p>" + alvo.innerHTML;
+    }
+  } finally {
+    botao.disabled = false;
+  }
+}
+
 async function verLead(id) {
   var corpo = $("detalhe-corpo");
   corpo.innerHTML = '<p class="vazio">Carregando...</p>';
@@ -710,6 +734,16 @@ async function verLead(id) {
   if (l.bounced_at) html += '<span class="etiqueta" style="color:var(--erro)">bounce</span>';
   if (l.resume_at) html += '<span class="etiqueta">retomar em ' + dataCurta(l.resume_at) + "</span>";
   html += "</div>";
+
+  // Destrava lead que ficou com e-mail não verificado. O enriquecimento novo
+  // já marca verificado sozinho; isto serve para os que ficaram parados antes.
+  if (!l.email_verified) {
+    html += '<div class="linha" style="margin-bottom:12px">';
+    html += '<button data-verificar="' + esc(l.id) + '">';
+    html += "Marcar e-mail como verificado</button>";
+    html += '<span class="vazio">sem isso ele n&atilde;o entra na fila de envio</span>';
+    html += "</div>";
+  }
 
   if (l.handoff_reason) html += '<p class="aviso">' + esc(l.handoff_reason) + "</p>";
   if (l.discard_reason) html += '<p class="vazio">Descartado: ' + esc(l.discard_reason) + "</p>";
@@ -966,6 +1000,7 @@ document.addEventListener("click", function (e) {
   if (b && b.dataset.proposta) return abrirProposta(b.dataset.proposta);
   if (b && b.dataset.empresas) return verEmpresas(b.dataset.empresas);
   if (b && b.dataset.eventos) return verEventos(b.dataset.eventos);
+  if (b && b.dataset.verificar) return verificarEmail(b, b.dataset.verificar);
   if (b && b.dataset.leads) return verLeads(b.dataset.leads);
   var tr = e.target.closest("tr[data-lead]");
   if (tr) return verLead(tr.dataset.lead);

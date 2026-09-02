@@ -405,3 +405,31 @@ export async function porQueNaoEstaPronto(
     semEmailVerificado: rows[0]?.sem_verificar ?? 0,
   };
 }
+
+/**
+ * Marca o e-mail do lead como verificado, por decisão de uma pessoa.
+ *
+ * É uma sobreposição deliberada de uma trava de segurança: o funil só envia
+ * para endereço verificado porque bounce custa reputação de domínio, e este
+ * caminho pula essa conferência. Existe porque o fornecedor às vezes devolve
+ * um endereço claramente bom sem afirmar que é válido — e sem isto o lead
+ * fica enriquecido e parado para sempre, já que nada o reverifica depois.
+ *
+ * Só age em lead que ainda não está verificado, e devolve se mudou algo:
+ * quem chama consegue distinguir "destravei" de "já estava assim" sem uma
+ * segunda consulta.
+ */
+export async function marcarEmailVerificadoManualmente(
+  db: Db,
+  tenantId: string,
+  leadId: string,
+): Promise<boolean> {
+  const { rows } = await db.query<{ id: string }>(
+    `update leads
+        set email_verified = true, updated_at = now()
+      where tenant_id = $1 and id = $2 and email_verified = false
+      returning id`,
+    [tenantId, leadId],
+  );
+  return rows.length > 0;
+}

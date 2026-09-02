@@ -548,3 +548,66 @@ describe("duas campanhas podem mirar a mesma empresa", () => {
     expect(segunda.ignoradas).toBe(1);
   });
 });
+
+describe("tratarVerificarEmailDoLead", () => {
+  it("destrava o lead e registra quem decidiu", async () => {
+    // Sobrepõe a trava que protege a reputação do domínio. Se o bounce vier
+    // depois, o evento é o que explica por que aquele endereço saiu.
+    const { tratarVerificarEmailDoLead } = await import(
+      "../../../src/api/handlers/painel.js"
+    );
+    const { lead } = await cenario("Destravar", "27000000000101", "travado@alfa.com.br");
+
+    await banco.db.query(`update leads set email_verified = false where id = $1`, [
+      lead.id,
+    ]);
+
+    const res = await tratarVerificarEmailDoLead(
+      comSegredo("/painel/leads/" + lead.id + "/verificar-email"),
+      lead.id,
+      deps(),
+    );
+    expect(res.status).toBe(200);
+    expect((await res.json()) as { mudou: boolean }).toMatchObject({ mudou: true });
+
+    const { rows } = await banco.db.query<{ email_verified: boolean }>(
+      `select email_verified from leads where id = $1`,
+      [lead.id],
+    );
+    expect(rows[0]?.email_verified).toBe(true);
+
+    const { rows: eventos } = await banco.db.query<{ kind: string }>(
+      `select kind from events where lead_id = $1 and kind = 'email_verificado_manualmente'`,
+      [lead.id],
+    );
+    expect(eventos).toHaveLength(1);
+  });
+
+  it("não registra evento quando já estava verificado", async () => {
+    // `mudou: false` distingue "destravei" de "já estava assim" sem uma
+    // segunda consulta — e sem poluir a trilha com decisão que não houve.
+    const { tratarVerificarEmailDoLead } = await import(
+      "../../../src/api/handlers/painel.js"
+    );
+    const { lead } = await cenario("Já verificado", "28000000000101", "ok@alfa.com.br");
+
+    const res = await tratarVerificarEmailDoLead(
+      comSegredo("/painel/leads/" + lead.id + "/verificar-email"),
+      lead.id,
+      deps(),
+    );
+    expect((await res.json()) as { mudou: boolean }).toMatchObject({ mudou: false });
+  });
+
+  it("recusa sem o segredo certo", async () => {
+    const { tratarVerificarEmailDoLead } = await import(
+      "../../../src/api/handlers/painel.js"
+    );
+    const res = await tratarVerificarEmailDoLead(
+      requisicao("/painel/leads/x/verificar-email"),
+      "99999999-9999-9999-9999-999999999999",
+      deps(),
+    );
+    expect(res.status).toBe(401);
+  });
+});

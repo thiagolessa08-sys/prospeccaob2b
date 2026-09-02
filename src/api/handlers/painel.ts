@@ -10,11 +10,13 @@ import {
   buscarLead,
   contarLeadsPorEstagio,
   listarLeadsDaCampanha,
+  marcarEmailVerificadoManualmente,
 } from "../../db/repositories/leads.js";
 import { carregarConversa } from "../../db/repositories/messages.js";
 import {
   listarEventosDoLead,
   listarEventosDaCampanha,
+  registrarEvento,
 } from "../../db/repositories/events.js";
 import { HEADER_SEGREDO_N8N } from "./processar-resposta.js";
 
@@ -229,4 +231,50 @@ export async function tratarEventosDaCampanha(
     limiteDaQuery(req),
   );
   return json(eventos);
+}
+
+/**
+ * Destrava um lead cujo e-mail o fornecedor não afirmou ser válido.
+ *
+ * Grava evento sempre: isto sobrepõe a trava que protege a reputação do
+ * domínio, e uma decisão dessas precisa ter dono e data. Se o bounce vier
+ * depois, o evento é o que explica por que aquele endereço saiu.
+ */
+export async function tratarVerificarEmailDoLead(
+  req: Request,
+  leadId: string,
+  deps: DepsPainelHttp,
+): Promise<Response> {
+  if (!segredoConfere(req.headers.get(HEADER_SEGREDO_N8N), deps.segredo)) {
+    return new Response("segredo inválido", { status: 401 });
+  }
+
+  const recusa = idInvalido(leadId);
+  if (recusa) return recusa;
+
+  const lead = await buscarLead(deps.db, deps.tenantId, leadId);
+  if (!lead) return json({ erro: "lead não encontrado" }, 404);
+
+  const mudou = await marcarEmailVerificadoManualmente(
+    deps.db,
+    deps.tenantId,
+    leadId,
+  );
+
+  if (mudou) {
+    await registrarEvento(deps.db, {
+      tenantId: deps.tenantId,
+      leadId,
+      kind: "email_verificado_manualmente",
+      payload: { email: lead.email, decidido_no_painel: true },
+    }).catch(() => {});
+  }
+
+  return json({
+    ok: true,
+    mudou,
+    motivo: mudou
+      ? "E-mail marcado como verificado. O lead entra na fila de envio."
+      : "Este lead já estava com o e-mail verificado.",
+  });
 }
