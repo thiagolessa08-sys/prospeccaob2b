@@ -195,7 +195,14 @@ function formaRecebida(resposta: unknown): string {
  * afirmar por ela; marcar `invalid` descartaria contato bom. O disjuntor de
  * bounce existe justamente para o que passar daqui e não entregar.
  */
-function traduzirStatus(bruto: unknown): StatusVerificacao {
+/**
+ * O status que a Lusha afirma, quando afirma. `null` quando não há sinal.
+ *
+ * Devolve `null` em vez de `accept_all` de propósito: quem chama precisa
+ * distinguir "ela disse que é indeterminado" de "ela não disse nada", porque
+ * no segundo caso ainda há a nota do e-mail para consultar.
+ */
+function traduzirStatusExplicito(bruto: unknown): StatusVerificacao | null {
   switch (typeof bruto === "string" ? bruto.toLowerCase() : bruto) {
     case "valid":
     case "verified":
@@ -206,7 +213,7 @@ function traduzirStatus(bruto: unknown): StatusVerificacao {
     case false:
       return "invalid";
     default:
-      return "accept_all";
+      return null;
   }
 }
 
@@ -262,7 +269,7 @@ function cargoDe(bruto: Record<string, unknown>): string | null {
  */
 function escolherEmail(
   bruto: Record<string, unknown>,
-): { endereco: string; confianca: number | null } | null {
+): { endereco: string; confianca: number | null; nota: string | null } | null {
   const lista = objetos(bruto.emails);
 
   const corporativo = lista.find((e) => texto(e, "type") === "work");
@@ -274,10 +281,37 @@ function escolherEmail(
     texto(bruto, "email", "emailAddress", "email_address");
   if (!endereco) return null;
 
-  return {
-    endereco,
-    confianca: escolhido ? notaEmNumero(texto(escolhido, "confidence")) : null,
-  };
+  const nota = escolhido ? texto(escolhido, "confidence") : null;
+  return { endereco, confianca: notaEmNumero(nota), nota };
+}
+
+/**
+ * A nota do e-mail vira a verificação que a cadeia entende.
+ *
+ * Isto decide se o lead SAI. `paraNovoLead` só marca `email_verified` quando
+ * a verificação é `valid`, e `listarProntosParaContato` só enfileira
+ * verificado — então um lead que chega como `accept_all` fica enriquecido e
+ * parado para sempre, porque nada o reverifica depois.
+ *
+ * A nota da Lusha é justamente a confiança dela no endereço, e estava sendo
+ * ignorada: todo lead virava `accept_all` e o funil parava calado no envio.
+ * A+ e A são afirmação de qualidade — valem `valid`. B para baixo é
+ * indeterminação, e indeterminado espera: é o endereço com maior chance de
+ * voltar como bounce, e o disjuntor existe justamente porque bounce custa
+ * reputação de domínio.
+ */
+function verificacaoDaNota(nota: string | null): StatusVerificacao | null {
+  switch (nota?.toUpperCase()) {
+    case "A+":
+    case "A":
+      return "valid";
+    case "B":
+    case "C":
+    case "D":
+      return "accept_all";
+    default:
+      return null;
+  }
 }
 
 /**
@@ -333,9 +367,19 @@ function paraCandidato(
       escolhido.confianca ??
       numero(bruto, "confidence", "score", "emailConfidence") ??
       75,
-    verificacao: traduzirStatus(
-      bruto.emailStatus ?? bruto.email_status ?? bruto.isValid ?? bruto.status,
-    ),
+    /**
+     * O status explícito quando vem; senão, a nota do e-mail.
+     *
+     * A ordem importa: um campo de status é afirmação direta da Lusha, e a
+     * nota é a confiança dela. Só quando nenhum dos dois existe é que cai em
+     * `accept_all` — indeterminado, que não sai da fila de envio.
+     */
+    verificacao:
+      traduzirStatusExplicito(
+        bruto.emailStatus ?? bruto.email_status ?? bruto.isValid ?? bruto.status,
+      ) ??
+      verificacaoDaNota(escolhido.nota) ??
+      "accept_all",
     fonte,
   };
 }

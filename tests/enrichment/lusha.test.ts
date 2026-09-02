@@ -590,3 +590,72 @@ describe("o e-mail como a V3 devolve", () => {
     expect(chamadas[1]?.corpo.contactIds).toBeUndefined();
   });
 });
+
+describe("a nota do e-mail decide se o lead sai", () => {
+  async function candidatoCom(confidence: string) {
+    const { fetchFalso } = servidor(
+      { results: [{ id: "v1.n", canReveal: [{ field: "emails" }] }] },
+      {
+        results: [
+          {
+            id: "v1.n",
+            emails: [{ email: "x@alfa.com.br", type: "work", confidence }],
+          },
+        ],
+      },
+    );
+    const achados = await buscarNoDominio(
+      { dominio: "alfa.com.br", apiKey: "k" },
+      { fetch: fetchFalso },
+    );
+    return achados[0];
+  }
+
+  it("A+ e A viram `valid`, que é o que libera o envio", async () => {
+    // `paraNovoLead` só marca email_verified quando a verificação é `valid`, e
+    // a fila de envio só pega verificado. Sem esta tradução todo lead da Lusha
+    // ficava enriquecido e parado para sempre.
+    expect((await candidatoCom("A+"))?.verificacao).toBe("valid");
+    expect((await candidatoCom("A"))?.verificacao).toBe("valid");
+  });
+
+  it("B para baixo fica indeterminado e espera", async () => {
+    // Indeterminado é o endereço com maior chance de bounce, e bounce custa
+    // reputação de domínio.
+    expect((await candidatoCom("B"))?.verificacao).toBe("accept_all");
+    expect((await candidatoCom("C"))?.verificacao).toBe("accept_all");
+  });
+
+  it("o status explícito vence a nota", async () => {
+    // Campo de status é afirmação direta da Lusha; a nota é confiança dela.
+    const { fetchFalso } = servidor(
+      { results: [{ id: "v1.s", canReveal: [{ field: "emails" }] }] },
+      {
+        results: [
+          {
+            id: "v1.s",
+            emailStatus: "invalid",
+            emails: [{ email: "x@alfa.com.br", type: "work", confidence: "A+" }],
+          },
+        ],
+      },
+    );
+    const achados = await buscarNoDominio(
+      { dominio: "alfa.com.br", apiKey: "k" },
+      { fetch: fetchFalso },
+    );
+    expect(achados[0]?.verificacao).toBe("invalid");
+  });
+
+  it("sem nota e sem status, indeterminado", async () => {
+    const { fetchFalso } = servidor(
+      { results: [{ id: "v1.v", canReveal: [{ field: "emails" }] }] },
+      { results: [{ id: "v1.v", emails: [{ email: "x@alfa.com.br", type: "work" }] }] },
+    );
+    const achados = await buscarNoDominio(
+      { dominio: "alfa.com.br", apiKey: "k" },
+      { fetch: fetchFalso },
+    );
+    expect(achados[0]?.verificacao).toBe("accept_all");
+  });
+});

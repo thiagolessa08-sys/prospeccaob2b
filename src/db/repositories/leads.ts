@@ -370,3 +370,38 @@ export async function listarLeadsDaCampanha(
   );
   return rows;
 }
+
+export interface PorQueNaoEstaPronto {
+  enriquecidos: number;
+  semEmailVerificado: number;
+}
+
+/**
+ * Por que a fila de envio está vazia mesmo havendo leads.
+ *
+ * `listarProntosParaContato` exige `stage = 'enriched'` E
+ * `email_verified = true`. Um lead que chega com verificação indeterminada
+ * fica enriquecido e parado para sempre — nada o reverifica depois — e a
+ * tela dizia só "Nenhum lead pronto para contato", que soa como "não há
+ * leads" quando na verdade há e estão travados.
+ */
+export async function porQueNaoEstaPronto(
+  db: Db,
+  tenantId: string,
+  campaignId: string,
+): Promise<PorQueNaoEstaPronto> {
+  const { rows } = await db.query<{ enriquecidos: number; sem_verificar: number }>(
+    `select
+       count(*) filter (where stage = 'enriched')::int as enriquecidos,
+       count(*) filter (where stage = 'enriched' and email_verified = false)::int
+         as sem_verificar
+     from leads
+     where tenant_id = $1 and campaign_id = $2`,
+    [tenantId, campaignId],
+  );
+
+  return {
+    enriquecidos: rows[0]?.enriquecidos ?? 0,
+    semEmailVerificado: rows[0]?.sem_verificar ?? 0,
+  };
+}

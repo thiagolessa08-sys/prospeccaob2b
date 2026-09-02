@@ -6,6 +6,7 @@ import {
   pausarCampanha,
 } from "../db/repositories/campaigns.js";
 import {
+  porQueNaoEstaPronto,
   listarProntosParaContato,
   transicionarLead,
 } from "../db/repositories/leads.js";
@@ -131,6 +132,24 @@ export async function enviarLote(
     restante,
   );
   if (prontos.length === 0) {
+    /**
+     * Explica a fila vazia, em vez de só constatá-la.
+     *
+     * Lead enriquecido com e-mail não verificado fica parado para sempre:
+     * `listarProntosParaContato` exige verificado e nada reverifica depois.
+     * "Nenhum lead pronto" soa como "não há leads" — e a diferença entre as
+     * duas decide se você espera ou vai atrás do fornecedor.
+     */
+    const situacao = await porQueNaoEstaPronto(db, tenantId, campaignId);
+    if (situacao.semEmailVerificado > 0) {
+      return {
+        ...vazio,
+        motivo:
+          `Nenhum lead pronto para contato. ${situacao.enriquecidos} enriquecido(s), ` +
+          `mas ${situacao.semEmailVerificado} com e-mail não verificado — o funil ` +
+          `só envia para endereço verificado, porque bounce custa reputação de domínio.`,
+      };
+    }
     return { ...vazio, motivo: "Nenhum lead pronto para contato." };
   }
 
