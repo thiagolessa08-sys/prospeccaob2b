@@ -342,3 +342,73 @@ describe("leitura dos formatos reais da V3", () => {
     expect(r.empresas[0]?.dominio).toBe("gama.com.br");
   });
 });
+
+describe("filtro que não casa com ninguém", () => {
+  it("manda technologiesCondition: or", async () => {
+    // Sem isso, cinco tecnologias podem virar "usa SAP E TOTVS E Oracle E
+    // Dynamics E SQL Server" — praticamente ninguém, e a resposta volta 200
+    // com zero, indistinguível de "não existe empresa com esse perfil".
+    const { fetchFalso, chamadas } = servidor({ results: [] });
+
+    await pesquisarEmpresasNaLusha(
+      filtros({ tecnologias: ["SAP", "TOTVS"] }),
+      { apiKey: "k" },
+      { fetch: fetchFalso },
+    );
+
+    expect(chamadas[0]?.corpo.filters.companies.include.technologiesCondition).toBe("or");
+  });
+
+  it("afrouxa em passos e diz qual passo funcionou", async () => {
+    let n = 0;
+    const corpos: any[] = [];
+    const fetchFalso = vi.fn(async (_u: unknown, init?: RequestInit) => {
+      n += 1;
+      corpos.push(JSON.parse(String(init?.body)));
+      // Primeira (filtro completo) vazia; segunda (sem tecnologia) acha.
+      if (n === 1) return new Response(JSON.stringify({ results: [] }), { status: 200 });
+      return new Response(
+        JSON.stringify({ results: [{ id: "v1.c", name: "Alfa" }] }),
+        { status: 200 },
+      );
+    });
+
+    const r = await pesquisarEmpresasNaLusha(
+      filtros({ tecnologias: ["SAP"], min_employees: 300, ufs: ["SP"] }),
+      { apiKey: "k" },
+      { fetch: fetchFalso as unknown as typeof fetch },
+    );
+
+    expect(r.empresas).toHaveLength(1);
+    expect(r.diagnostico).toMatch(/sem o filtro de tecnologia/);
+    // A segunda chamada não leva tecnologia.
+    expect(corpos[1].filters.companies.include.technologies).toBeUndefined();
+  });
+
+  it("quando nada acha, diz que a base não cobre o perfil", async () => {
+    const { fetchFalso } = servidor({ results: [] });
+
+    const r = await pesquisarEmpresasNaLusha(
+      filtros({ tecnologias: ["SAP"], min_employees: 300 }),
+      { apiKey: "k" },
+      { fetch: fetchFalso },
+    );
+
+    expect(r.empresas).toEqual([]);
+    expect(r.diagnostico).toMatch(/não cobre esse perfil/i);
+  });
+
+  it("não afrouxa a partir da segunda página", async () => {
+    // Da segunda em diante estamos paginando um resultado que já existe;
+    // trocar o filtro no meio misturaria dois conjuntos de empresas.
+    const { fetchFalso, chamadas } = servidor({ results: [] });
+
+    await pesquisarEmpresasNaLusha(
+      filtros({ tecnologias: ["SAP"], min_employees: 300 }),
+      { apiKey: "k", pagina: 1 },
+      { fetch: fetchFalso },
+    );
+
+    expect(chamadas).toHaveLength(1);
+  });
+});

@@ -228,6 +228,7 @@ async function descobrirNaLusha(
   let salvas = 0;
   let ignoradas = 0;
   let pagina = 0;
+  let diagnosticoDaBusca = "";
 
   while (encontradas < maxEmpresas) {
     let lote;
@@ -261,6 +262,7 @@ async function descobrirNaLusha(
       };
     }
 
+    if (lote.diagnostico) diagnosticoDaBusca = lote.diagnostico;
     if (lote.empresas.length === 0) break;
 
     encontradas += lote.empresas.length;
@@ -307,6 +309,11 @@ async function descobrirNaLusha(
     salvas,
     ignoradas,
     paginas: pagina + 1,
-    motivo: `${encontradas} encontrada(s) na Lusha, ${salvas} nova(s) salva(s), ${ignoradas} já existente(s).`,
+    motivo:
+      `${encontradas} encontrada(s) na Lusha, ${salvas} nova(s) salva(s), ` +
+      `${ignoradas} já existente(s).` +
+      // O diagnóstico de filtro afrouxado, quando houve. Zero resultados com
+      // HTTP 200 não diz qual critério zerou; esta frase diz.
+      (diagnosticoDaBusca ? ` ${diagnosticoDaBusca}` : ""),
   };
 }

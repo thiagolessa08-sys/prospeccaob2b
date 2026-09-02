@@ -128,6 +128,14 @@ export interface ResultadoDaBuscaDeEmpresas {
   empresas: readonly EmpresaDaLusha[];
   /** Quantas a Lusha diz existir no total, quando informa. */
   total: number | null;
+  /**
+   * O que a busca teve de afrouxar para achar alguém, quando afrouxou.
+   *
+   * Zero resultados com HTTP 200 é a resposta mais difícil de ler: o filtro é
+   * válido e simplesmente não casa com ninguém, e a API não diz QUAL critério
+   * zerou. Sem isto sobra adivinhar — que já custou vários ciclos aqui.
+   */
+  diagnostico?: string;
 }
 
 /**
@@ -181,7 +189,22 @@ function paraFiltros(filtros: NicheFilters): Record<string, unknown> {
     ? estados.map((estado) => ({ country: paises[0], state: estado }))
     : paises.map((pais) => ({ country: pais }));
 
-  if (filtros.tecnologias.length > 0) incluir.technologies = filtros.tecnologias;
+  if (filtros.tecnologias.length > 0) {
+    incluir.technologies = filtros.tecnologias;
+    /**
+     * "or" explícito, e é provavelmente o que fazia a busca voltar vazia.
+     *
+     * A Lusha tem `technologiesCondition` e o padrão dela não está
+     * documentado. Se for "and", cinco tecnologias no filtro pedem empresa
+     * que usa SAP E TOTVS E Oracle E Dynamics E SQL Server ao mesmo tempo —
+     * praticamente ninguém, e a resposta volta 200 com zero resultados, que
+     * é indistinguível de "não existe empresa com esse perfil".
+     *
+     * O que queremos é o contrário: qualquer uma dessas serve, porque a lista
+     * veio de "ERP implantado", não de "usa os cinco".
+     */
+    incluir.technologiesCondition = "or";
+  }
 
   /**
    * `sizes` é `{min, max}` mesmo — o formato que eu tinha adivinhado certo e
@@ -311,6 +334,57 @@ function quantosFuncionarios(bruto: Record<string, unknown>): number | null {
  * Uma tentativa, sem repetição: o limite da Lusha é diário, e repetir um 429
  * consome mais uma da cota que acabou de estourar sem chance de dar certo.
  */
+/**
+ * As variantes do filtro, da mais restrita para a mais frouxa.
+ *
+ * Zero resultados com HTTP 200 é a resposta mais difícil de ler: o filtro é
+ * válido e simplesmente não casa com ninguém, e a API não diz QUAL critério
+ * zerou. Afrouxar em passos e reportar qual passo funcionou responde isso
+ * numa rodada, em vez de um palpite por deploy.
+ *
+ * Cada passo custa uma chamada, e só roda quando o anterior voltou vazio —
+ * ou seja, no caso em que a chamada anterior não serviu para nada mesmo.
+ */
+function variantesDoFiltro(
+  filtros: NicheFilters,
+): Array<{ rotulo: string; filtros: NicheFilters }> {
+  const variantes = [{ rotulo: "filtro completo", filtros }];
+
+  if (filtros.tecnologias.length > 0) {
+    variantes.push({
+      rotulo: "sem o filtro de tecnologia",
+      filtros: { ...filtros, tecnologias: [] },
+    });
+  }
+
+  if (filtros.min_employees !== null || filtros.max_employees !== null) {
+    variantes.push({
+      rotulo: "sem tecnologia e sem porte",
+      filtros: {
+        ...filtros,
+        tecnologias: [],
+        min_employees: null,
+        max_employees: null,
+      },
+    });
+  }
+
+  if (filtros.ufs.length > 0) {
+    variantes.push({
+      rotulo: "só o país, sem estado, tecnologia ou porte",
+      filtros: {
+        ...filtros,
+        ufs: [],
+        tecnologias: [],
+        min_employees: null,
+        max_employees: null,
+      },
+    });
+  }
+
+  return variantes;
+}
+
 export async function pesquisarEmpresasNaLusha(
   filtros: NicheFilters,
   opts: { apiKey: string; pagina?: number; limite?: number },
@@ -321,14 +395,86 @@ export async function pesquisarEmpresasNaLusha(
   // acontece depois, sobre o que voltou.
   const tamanhoDaPagina = Math.max(PAGINA_MINIMA, limite);
 
-  let resposta: unknown;
+  /**
+   * Afrouxa só na primeira página. Da segunda em diante estamos paginando um
+   * resultado que já existe, e trocar o filtro no meio misturaria dois
+   * conjuntos diferentes de empresas.
+   */
+  const variantes = pagina === 0 ? variantesDoFiltro(filtros) : [
+    { rotulo: "filtro completo", filtros },
+  ];
+
+  const tentadas: string[] = [];
+
+  for (const variante of variantes) {
+    const resposta = await umaBusca(
+      variante.filtros,
+      { apiKey, pagina, tamanhoDaPagina },
+      deps,
+    );
+
+    const brutas = listaDeResultados(resposta);
+    const empresas = brutas
+      .map(paraEmpresa)
+      .filter((e): e is EmpresaDaLusha => e !== null)
+      // Corta no teto pedido: a página teve de ser 10 no mínimo, mas quem
+      // pediu uma empresa não pode receber dez. Cortar aqui não custa nada —
+      // a busca cobra por chamada paginada, não por empresa devolvida.
+      .slice(0, limite);
+
+    /**
+     * Achou linhas mas nenhuma legível: é campo renomeado, não busca vazia.
+     * Lançar em vez de devolver lista vazia — vazio se disfarçaria de "não há
+     * empresa com esse perfil" e mandaria afrouxar o filtro à toa.
+     */
+    if (brutas.length > 0 && empresas.length === 0) {
+      throw new Error(
+        `Lusha devolveu ${brutas.length} empresa(s) sem id ou nome reconhecível. ` +
+          `Campos vistos: ${formaRecebida(brutas[0])}`,
+      );
+    }
+
+    tentadas.push(variante.rotulo);
+
+    if (empresas.length > 0) {
+      const total =
+        typeof resposta === "object" && resposta !== null
+          ? numero(resposta as Record<string, unknown>, "total", "totalResults")
+          : null;
+
+      return {
+        empresas,
+        total,
+        diagnostico:
+          tentadas.length > 1
+            ? `Nada com ${tentadas[0]}. Achou ${variante.rotulo}.`
+            : undefined,
+      };
+    }
+  }
+
+  return {
+    empresas: [],
+    total: 0,
+    diagnostico:
+      `Nenhuma empresa na Lusha para nenhum destes filtros: ${tentadas.join("; ")}. ` +
+      "A base não cobre esse perfil no Brasil.",
+  };
+}
+
+/** Uma chamada de busca, com os erros de negócio já traduzidos. */
+async function umaBusca(
+  filtros: NicheFilters,
+  opts: { apiKey: string; pagina: number; tamanhoDaPagina: number },
+  deps: { fetch?: FetchLike },
+): Promise<unknown> {
   try {
-    resposta = await fetchJson<unknown>(`${BASE}/companies/prospecting`, {
+    return await fetchJson<unknown>(`${BASE}/companies/prospecting`, {
       fetch: deps.fetch,
       metodo: "POST",
-      headers: { api_key: apiKey, "content-type": "application/json" },
+      headers: { api_key: opts.apiKey, "content-type": "application/json" },
       corpo: JSON.stringify({
-        pagination: { page: pagina, size: tamanhoDaPagina },
+        pagination: { page: opts.pagina, size: opts.tamanhoDaPagina },
         filters: paraFiltros(filtros),
       }),
       timeoutMs: 30_000,
@@ -351,12 +497,8 @@ export async function pesquisarEmpresasNaLusha(
        * 400 é sempre filtro montado errado, e a Lusha diz qual — mas só um
        * por vez. Descobrir os nomes válidos custaria um ciclo de deploy por
        * campo errado, então perguntamos a ela na hora.
-       *
-       * `/prospecting/filters` é endpoint de descoberta: lista os tipos de
-       * filtro aceitos e não cobra crédito. Uma chamada aqui transforma
-       * "errei um nome" em "aqui está a lista inteira dos certos".
        */
-      const validos = await tiposDeFiltroAceitos(apiKey, deps.fetch);
+      const validos = await tiposDeFiltroAceitos(opts.apiKey, deps.fetch);
       throw new Error(
         `Lusha recusou o filtro (HTTP 400): ${erro.corpo.slice(0, 300)}` +
           (validos ? ` — filtros aceitos por ela: ${validos}` : ""),
@@ -364,32 +506,4 @@ export async function pesquisarEmpresasNaLusha(
     }
     throw erro;
   }
-
-  const brutas = listaDeResultados(resposta);
-  const empresas = brutas
-    .map(paraEmpresa)
-    .filter((e): e is EmpresaDaLusha => e !== null)
-    // Corta no teto pedido: a página teve de ser 10 no mínimo, mas quem pediu
-    // uma empresa não pode receber dez. Cortar aqui não custa nada — a busca
-    // cobra por chamada paginada, não por empresa devolvida.
-    .slice(0, limite);
-
-  /**
-   * Achou linhas mas nenhuma legível: é campo renomeado, não busca vazia.
-   * Lançar em vez de devolver lista vazia — vazio se disfarçaria de "não há
-   * empresa com esse perfil" e mandaria afrouxar o filtro à toa.
-   */
-  if (brutas.length > 0 && empresas.length === 0) {
-    throw new Error(
-      `Lusha devolveu ${brutas.length} empresa(s) sem id ou nome reconhecível. ` +
-        `Campos vistos: ${formaRecebida(brutas[0])}`,
-    );
-  }
-
-  const total =
-    typeof resposta === "object" && resposta !== null
-      ? numero(resposta as Record<string, unknown>, "total", "totalResults")
-      : null;
-
-  return { empresas, total };
 }
