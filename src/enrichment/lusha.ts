@@ -248,18 +248,68 @@ function cargoDe(bruto: Record<string, unknown>): string | null {
 }
 
 
+/**
+ * Escolhe o e-mail entre os que a Lusha devolveu.
+ *
+ * `results.emails` é uma lista de `{email, type, confidence, updateDate}`,
+ * com `type` valendo "work", "private" ou "unknown". O corporativo vem
+ * primeiro de propósito: o pessoal não é o contato de trabalho da pessoa, e
+ * prospectar num endereço particular é problema sob a LGPD, não só má
+ * educação.
+ *
+ * `confidence` é LETRA ("A+", "B"), não número — ler como número devolveria
+ * nada e jogaria fora o único sinal de qualidade que ela dá.
+ */
+function escolherEmail(
+  bruto: Record<string, unknown>,
+): { endereco: string; confianca: number | null } | null {
+  const lista = objetos(bruto.emails);
+
+  const corporativo = lista.find((e) => texto(e, "type") === "work");
+  const naoPessoal = lista.find((e) => texto(e, "type") !== "private");
+  const escolhido = corporativo ?? naoPessoal ?? lista[0];
+
+  const endereco =
+    (escolhido ? texto(escolhido, "email", "address", "value") : null) ??
+    texto(bruto, "email", "emailAddress", "email_address");
+  if (!endereco) return null;
+
+  return {
+    endereco,
+    confianca: escolhido ? notaEmNumero(texto(escolhido, "confidence")) : null,
+  };
+}
+
+/**
+ * A nota de confiança da Lusha em número.
+ *
+ * Ela usa letra; a cadeia compara números para escolher entre candidatos e
+ * para o disjuntor de bounce. Sem esta conversão todo contato empataria no
+ * valor sintético e a ordenação por qualidade deixaria de existir.
+ */
+function notaEmNumero(nota: string | null): number | null {
+  switch (nota?.toUpperCase()) {
+    case "A+":
+      return 95;
+    case "A":
+      return 90;
+    case "B":
+      return 75;
+    case "C":
+      return 60;
+    case "D":
+      return 45;
+    default:
+      return null;
+  }
+}
+
 function paraCandidato(
   bruto: Record<string, unknown>,
   fonte: "lusha_finder" | "lusha_domain",
 ): CandidatoDecisor | null {
-  /**
-   * `reveal: ["emails"]` devolve endereços; a doc não fixa o nome do campo.
-   * Cobrimos o objeto direto e a lista, que são as duas formas plausíveis.
-   */
-  const email =
-    texto(bruto, "email", "emailAddress", "email_address") ??
-    texto(objetos(bruto.emails)[0] ?? {}, "email", "address", "value");
-  if (!email) return null;
+  const escolhido = escolherEmail(bruto);
+  if (!escolhido) return null;
 
   const inteiro = texto(bruto, "name", "fullName", "full_name");
   const partido = [
@@ -272,13 +322,17 @@ function paraCandidato(
   return {
     nome: inteiro ?? (partido || null),
     cargo: cargoDe(bruto),
-    email,
+    email: escolhido.endereco,
     /**
-     * 75 sintético quando a Lusha não dá score próprio: acima do 70 do e-mail
-     * declarado à Receita (que pode estar velho) e abaixo do que só uma
-     * verificação de verdade justificaria.
+     * A nota da Lusha quando ela dá; 75 sintético quando não.
+     *
+     * 75 fica acima do 70 do e-mail declarado à Receita (que pode estar
+     * velho) e abaixo do que só uma verificação de verdade justificaria.
      */
-    confianca: numero(bruto, "confidence", "score", "emailConfidence") ?? 75,
+    confianca:
+      escolhido.confianca ??
+      numero(bruto, "confidence", "score", "emailConfidence") ??
+      75,
     verificacao: traduzirStatus(
       bruto.emailStatus ?? bruto.email_status ?? bruto.isValid ?? bruto.status,
     ),
@@ -491,7 +545,9 @@ export async function buscarNoDominio(
   try {
     enriquecidos = await postar<unknown>(
       "/contacts/enrich",
-      { contactIds: ids, reveal: REVELAR },
+      // `ids`, não `contactIds`: a API recusa o segundo com "property
+      // contactIds should not exist".
+      { ids, reveal: REVELAR },
       chamada,
     );
   } catch (erro) {

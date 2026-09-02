@@ -182,7 +182,7 @@ describe("buscarNoDominio (Lusha)", () => {
     expect(chamadas[0]?.url).toBe("https://api.lusha.com/v3/contacts/prospecting");
     expect(chamadas[1]?.url).toBe("https://api.lusha.com/v3/contacts/enrich");
     expect(chamadas[1]?.corpo).toMatchObject({
-      contactIds: ["v1.xyz"],
+      ids: ["v1.xyz"],
       reveal: ["emails"],
     });
   });
@@ -522,5 +522,71 @@ describe("o id da empresa é o localizador exato", () => {
     expect(chamadas[0]?.corpo.filters.companies.include.domains).toEqual([
       "alfa.com.br",
     ]);
+  });
+});
+
+describe("o e-mail como a V3 devolve", () => {
+  it("prefere o corporativo ao pessoal", async () => {
+    // E-mail pessoal não é o contato de trabalho, e prospectar num endereço
+    // particular é problema sob a LGPD.
+    const { fetchFalso } = servidor(
+      { results: [{ id: "v1.a", canReveal: [{ field: "emails" }] }] },
+      {
+        results: [
+          {
+            id: "v1.a",
+            firstName: "Ana",
+            emails: [
+              { email: "ana@gmail.com", type: "private", confidence: "A+" },
+              { email: "ana@alfa.com.br", type: "work", confidence: "B" },
+            ],
+          },
+        ],
+      },
+    );
+
+    const achados = await buscarNoDominio(
+      { dominio: "alfa.com.br", apiKey: "k" },
+      { fetch: fetchFalso },
+    );
+
+    expect(achados[0]?.email).toBe("ana@alfa.com.br");
+    // A nota do escolhido, não a do descartado.
+    expect(achados[0]?.confianca).toBe(75);
+  });
+
+  it("converte a nota em letra para número", async () => {
+    // `confidence` é "A+", não 95. Ler como número devolveria nada e jogaria
+    // fora o único sinal de qualidade que a Lusha dá.
+    const { fetchFalso } = servidor(
+      { results: [{ id: "v1.b", canReveal: [{ field: "emails" }] }] },
+      {
+        results: [
+          {
+            id: "v1.b",
+            emails: [{ email: "top@alfa.com.br", type: "work", confidence: "A+" }],
+          },
+        ],
+      },
+    );
+
+    const achados = await buscarNoDominio(
+      { dominio: "alfa.com.br", apiKey: "k" },
+      { fetch: fetchFalso },
+    );
+    expect(achados[0]?.confianca).toBe(95);
+  });
+
+  it("manda `ids` no enriquecimento, não `contactIds`", async () => {
+    // A API recusa `contactIds` com "property contactIds should not exist".
+    const { fetchFalso, chamadas } = servidor(
+      { results: [{ id: "v1.c", canReveal: [{ field: "emails" }] }] },
+      { results: [{ id: "v1.c", emails: [{ email: "c@alfa.com.br", type: "work" }] }] },
+    );
+
+    await buscarNoDominio({ dominio: "alfa.com.br", apiKey: "k" }, { fetch: fetchFalso });
+
+    expect(chamadas[1]?.corpo).toMatchObject({ ids: ["v1.c"], reveal: ["emails"] });
+    expect(chamadas[1]?.corpo.contactIds).toBeUndefined();
   });
 });
