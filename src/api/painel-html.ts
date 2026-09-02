@@ -234,7 +234,8 @@ async function api(caminho, opcoes) {
   try { corpo = JSON.parse(texto); } catch (e) { corpo = texto; }
 
   if (!res.ok) {
-    // `detalhe` é a causa real, que o servidor só manda para quem tem sessão.
+    // O campo "detalhe" é a causa real, que o servidor só manda para quem tem
+    // sessão do painel.
     // Antes disso, todo 500 chegava aqui como {"erro":"erro interno"} e a
     // resposta estava no log do Railway.
     if (corpo && typeof corpo === "object" && corpo.detalhe) {
