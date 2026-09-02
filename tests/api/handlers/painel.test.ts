@@ -465,3 +465,86 @@ describe("campos que o tipo promete e a consulta precisa trazer", () => {
     expect(pendentes[0]?.external_id).toBe("v1.company.fila");
   });
 });
+
+describe("duas campanhas podem mirar a mesma empresa", () => {
+  it("a segunda campanha salva a empresa que a primeira já tem", async () => {
+    /**
+     * O defeito que isto fecha: os índices de deduplicação eram por tenant, e
+     * não por campanha. A segunda campanha descobria as mesmas empresas,
+     * todas colidiam, nada era salvo — e a tela dizia "0 nova(s) salva(s)"
+     * sem que nada tivesse dado errado.
+     *
+     * `companies` é a lista de alvos DAQUELA campanha, não o cadastro de
+     * empresas do tenant. O que impede contatar a mesma pessoa duas vezes é a
+     * lista de supressão, na última milha do envio.
+     */
+    const { salvarEmpresasExternas } = await import(
+      "../../../src/db/repositories/companies.js"
+    );
+
+    const base = {
+      tenantId: banco.tenantId,
+      nicheDescription: "indústrias",
+      offerDescription: "BI",
+      schedulingLink: "https://cal.com/t/30min",
+      senderFirstName: "Thiago",
+    };
+    const primeira = await criarCampanha(banco.db, { ...base, name: "Primeira" });
+    const segunda = await criarCampanha(banco.db, { ...base, name: "Segunda" });
+
+    const empresa = (campaignId: string) => ({
+      tenantId: banco.tenantId,
+      campaignId,
+      externalId: "v1.company.compartilhada",
+      legalName: "Alfa Alimentos",
+      website: "alfa.com.br",
+      city: null,
+      uf: null,
+      employeeCount: null,
+      summary: null,
+      source: "lusha",
+    });
+
+    const na1 = await salvarEmpresasExternas(banco.db, [empresa(primeira.id)]);
+    const na2 = await salvarEmpresasExternas(banco.db, [empresa(segunda.id)]);
+
+    expect(na1.inseridas).toBe(1);
+    expect(na2.inseridas).toBe(1);
+  });
+
+  it("mas a mesma empresa duas vezes na MESMA campanha continua sendo uma", async () => {
+    // A deduplicação não sumiu: mudou de escopo. Rodar a descoberta duas
+    // vezes na mesma campanha não pode duplicar alvo.
+    const { salvarEmpresasExternas } = await import(
+      "../../../src/db/repositories/companies.js"
+    );
+    const campanha = await criarCampanha(banco.db, {
+      tenantId: banco.tenantId,
+      name: "Dedup na mesma",
+      nicheDescription: "indústrias",
+      offerDescription: "BI",
+      schedulingLink: "https://cal.com/t/30min",
+      senderFirstName: "Thiago",
+    });
+
+    const empresa = {
+      tenantId: banco.tenantId,
+      campaignId: campanha.id,
+      externalId: "v1.company.repetida",
+      legalName: "Beta",
+      website: null,
+      city: null,
+      uf: null,
+      employeeCount: null,
+      summary: null,
+      source: "lusha",
+    };
+
+    const primeira = await salvarEmpresasExternas(banco.db, [empresa]);
+    const segunda = await salvarEmpresasExternas(banco.db, [empresa]);
+
+    expect(primeira.inseridas).toBe(1);
+    expect(segunda.inseridas).toBe(0);
+    expect(segunda.ignoradas).toBe(1);
+  });
+});

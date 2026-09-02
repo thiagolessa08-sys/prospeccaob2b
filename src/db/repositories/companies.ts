@@ -22,7 +22,7 @@ const COLUNAS = `id, tenant_id, campaign_id, cnpj, external_id, legal_name, trad
 /**
  * Insere o lote deixando o banco resolver a duplicidade.
  *
- * `on conflict do nothing` sobre o índice parcial de CNPJ mantém o registro
+ * `on conflict do nothing` sobre o índice parcial de CNPJ da CAMPANHA mantém
  * original e devolve menos linhas do que foram enviadas — a diferença é a
  * contagem de ignoradas. Fazer o dedup em SQL, e não em memória, é o que torna
  * a operação segura quando dois fluxos rodam ao mesmo tempo.
@@ -93,7 +93,7 @@ export async function salvarEmpresas(
        (tenant_id, campaign_id, cnpj, legal_name, trade_name, website,
         city, uf, employee_count, summary, source)
      values ${marcadores.join(", ")}
-     on conflict (tenant_id, cnpj) where cnpj is not null do nothing
+     on conflict (tenant_id, campaign_id, cnpj) where cnpj is not null do nothing
      returning id`,
     valores,
   );
@@ -275,7 +275,8 @@ export interface NovaEmpresaExterna {
  * Grava empresas que não vêm da Receita — hoje, as da Lusha.
  *
  * Função à parte de `salvarEmpresas` porque o alvo do `on conflict` é outro:
- * lá é o índice parcial de CNPJ, aqui é o de `(tenant, source, external_id)`.
+ * lá é o índice parcial de CNPJ, aqui o de `(tenant, campanha, source,
+ * external_id)`.
  * O Postgres aceita um alvo por instrução, e juntar as duas num `insert` só
  * exigiria escolher qual dedup vale — que é justamente a decisão que depende
  * da origem.
@@ -312,7 +313,7 @@ export async function salvarEmpresasExternas(
        (tenant_id, campaign_id, external_id, legal_name, website, city, uf,
         employee_count, source)
      values ${linhas.join(", ")}
-     on conflict (tenant_id, source, external_id) where external_id is not null
+     on conflict (tenant_id, campaign_id, source, external_id) where external_id is not null
      do nothing
      returning id`,
     valores,
